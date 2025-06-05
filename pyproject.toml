@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fsc-dbt-mcp"
+description = "Custom dbt MCP Server - Core Tools Only"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "Custom MCP Server" },
+]
+dependencies = [
+    "dbt-mcp>=1.0.0",
+]
+
+[project.scripts]
+fsc-dbt-mcp = "fsc_dbt_mcp.server:main"
+
+[tool.uv]
+dev-dependencies = []

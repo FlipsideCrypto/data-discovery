@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dbt-core": {
+      "command": "uvx",
+      "args": [
+        "--env-file",
+        "/path/to/your/fsc-dbt-mcp/.env",
+        "dbt-mcp"
+      ]
+    }
+  }
+}
