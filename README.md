@@ -133,18 +133,17 @@ All tools run in a single MCP server process for simplified deployment.
    - Example: `export DBT_PATH=/Users/username/.pyenv/versions/3.12.11/bin/dbt`
 
 3. **"syntax error line 3 at position 2 unexpected 'limit'"**
-   - This occurs with older dbt versions that don't support `--log-format` flag
-   - Solution: Set `DBT_PATH` to a compatible dbt version (≥1.0)
+   - LIMIT should be passed as a parameter, not in the query text.
 
-4. **"No valid dbt artifacts found"**
+4. **dbt: error: unrecognized arguments: --log-format json**
+   - This occurs with older dbt versions that don't support `--log-format` flag
+   - Solution: Set `DBT_PATH` to a compatible dbt version (≥1.9)
+   - This likely occurs if multiple python versions are maintained via `pyenv`
+
+5. **"No valid dbt artifacts found"**
    - Run `dbt compile` in your dbt project to generate manifest.json
    - Run `dbt docs generate` to create catalog.json
    - Ensure target/ directory exists in your dbt project
-
-5. **Claude Desktop connection issues**
-   - Check the server path in Claude Desktop configuration
-   - Verify Python can be found at the specified path
-   - Check Claude Desktop logs for error messages
 
 ### Validation
 
