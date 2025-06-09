@@ -1,12 +1,16 @@
 {
   "mcpServers": {
-    "dbt-core": {
-      "command": "uvx",
+    "fsc-dbt-mcp": {
+      "command": "python",
       "args": [
-        "--env-file",
-        "/path/to/your/fsc-dbt-mcp/.env",
-        "dbt-mcp"
-      ]
+        "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/src/fsc_dbt_mcp/server.py"
+      ],
+      "env": {
+        "DBT_PATH": "/Users/jackforgash/.pyenv/versions/3.12.11/bin/dbt",
+        "DBT_PROJECT_DIR": "/Users/jackforgash/gh/fs/bitcoin-models",
+        "DBT_PROFILES_DIR": "/Users/jackforgash/.dbt",
+        "DEBUG": "true"
+      }
     }
   }
 }

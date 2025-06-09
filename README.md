@@ -1,41 +1,55 @@
-# Custom dbt MCP Server - Core Tools Only
+# FSC dbt MCP Server
 
-A lightweight Model Context Protocol (MCP) server that exposes only dbt Core functionality using the `dbt-mcp` package as a base. This server integrates with local dbt projects and provides Claude Desktop-compatible MCP interface.
+A lightweight Model Context Protocol (MCP) server that provides both dbt Core CLI functionality and custom discovery tools for dbt projects. This server integrates with local dbt projects and provides a Claude Desktop-compatible MCP interface.
 
 ## Features
 
-- **Core dbt Operations Only**: Exposes only essential dbt commands (run, test, compile, parse, clean, deps)
+- **dbt CLI Tools**: Essential dbt commands (list, compile, show) 
+- **Discovery Tools**: Custom tools for exploring dbt models and project metadata
 - **Auto-Discovery**: Automatically finds and configures local dbt projects
 - **Claude Desktop Integration**: Ready-to-use configuration for Claude Desktop
-- **Lightweight**: Minimal dependencies and focused functionality
+- **Prompt-Based Descriptions**: Rich tool descriptions loaded from markdown files
 
 ## Installation
 
-1. **Install uv** (if not already installed):
+1. **Install dependencies**:
    ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
+   pip install -e .
    ```
 
-2. **Clone or download this repository**
-
-3. **Verify dbt installation**:
+2. **Verify dbt installation**:
    ```bash
    dbt --version
    ```
 
 ## Configuration
 
-### Required Setup
+### Environment Variables
 
-1. **Copy the environment template**:
-   ```bash
-   cp .env.example .env
-   ```
+Set these environment variables for proper operation:
 
-2. **Set your dbt project path** in the `.env` file:
-   ```
-   DBT_PROJECT_DIR=/path/to/your/dbt/project
-   ```
+**Required:**
+- `DBT_PROJECT_DIR` - Path to your dbt project directory (containing `dbt_project.yml`)
+
+**Optional:**
+- `DBT_PATH` - Full path to dbt executable (recommended for pyenv users)
+- `DEBUG` - Enable debug logging (`true`/`false`)
+- `MAX_FILE_SIZE` - Maximum file size for JSON artifacts (default: 10MB)
+
+### Common Setup Examples
+
+**Standard installation:**
+```bash
+export DBT_PROJECT_DIR=/path/to/your/dbt/project
+```
+
+**pyenv users (recommended):**
+```bash
+export DBT_PROJECT_DIR=/path/to/your/dbt/project
+export DBT_PATH=/Users/username/.pyenv/versions/3.12.11/bin/dbt
+```
+
+> **Note**: Setting `DBT_PATH` is especially important for pyenv users, as older dbt versions may not support all CLI flags (like `--log-format`) used by this server.
 
 ### dbt Profiles
 
@@ -45,73 +59,91 @@ The server looks for dbt profiles in:
 
 ## Claude Desktop Setup
 
-1. **Update Claude Desktop configuration** by adding the contents of `claude_config.json` to your Claude Desktop MCP settings.
+1. **Update Claude Desktop configuration** by adding the server configuration to your Claude Desktop MCP settings:
 
-2. **Adjust the paths** in `claude_config.json` to match your installation:
    ```json
    {
      "mcpServers": {
-       "dbt-core": {
-         "command": "uvx",
-         "args": [
-           "--env-file",
-            "/path/to/your/fsc-dbt-mcp/.env",
-            "dbt-mcp"
-         ]
+       "fsc-dbt-mcp": {
+         "command": "python",
+         "args": ["/path/to/your/fsc-dbt-mcp/src/fsc_dbt_mcp/server.py"],
+         "env": {
+           "DBT_PROJECT_DIR": "/path/to/your/dbt/project",
+           "DBT_PATH": "/path/to/dbt/executable"
+         }
        }
      }
    }
    ```
 
+2. **Adjust the paths** to match your installation and set environment variables as needed.
+
 3. **Restart Claude Desktop** to load the new MCP server.
 
 ## Usage
 
-Once configured with Claude Desktop, you can use dbt commands through Claude:
+Once configured with Claude Desktop, you can use dbt commands and discovery tools through Claude:
 
-- "Run my dbt models"
-- "Test the dbt project"
-- "Compile the dbt project"
-- "Show me the dbt project structure"
-- "Clean dbt artifacts"
+**dbt CLI Commands:**
+- "List all dbt models in the project"
+- "Compile the dbt project" 
+- "Show me the top 5 rows from the users table"
+- "Execute this SQL query: SELECT * FROM fact_orders"
 
-## Available dbt Core Tools
+**Discovery Tools:**
+- "Get details about the customer_orders model"
+- "Show me information about model.my_project.sales_summary"
+- "What columns does the users table have?"
 
-The server exposes only these essential dbt operations:
-- `dbt run` - Execute models
-- `dbt test` - Run tests  
-- `dbt compile` - Compile models
-- `dbt parse` - Parse project
-- `dbt clean` - Clean artifacts
-- `dbt deps` - Install dependencies
-- Model and test file reading
-- Project structure exploration
+## Available Tools
 
-## Tool Filtering
+### dbt CLI Tools (3 tools)
+- **`dbt_list`** - List dbt resources (models, tests, sources, etc.) with optional selectors
+- **`dbt_compile`** - Compile dbt models to generate SQL without executing
+- **`dbt_show`** - Execute inline SQL queries against the data warehouse with sample results
 
-The server disables non-core functionality through environment variables:
-- `DISABLE_SEMANTIC_LAYER=true` - Disables semantic layer tools
-- `DISABLE_DISCOVERY=true` - Disables discovery API tools
-- `DISABLE_REMOTE=true` - Disables remote tools
+### Discovery Tools (1 tool)
+- **`get_model_details`** - Retrieve comprehensive model metadata including:
+  - Model description, schema, database, materialization
+  - Column details with types, descriptions, and comments  
+  - Dependencies (refs and sources)
+  - Statistics from catalog
+  - Raw and compiled SQL
+  - Tags, meta properties, and constraints
+
+## Architecture
+
+This server provides a unified MCP interface that combines:
+- **dbt CLI Tools**: Direct subprocess calls to dbt commands with proper logging
+- **Discovery Tools**: Custom implementations that parse dbt manifest.json and catalog.json artifacts
+- **Prompt System**: Tool descriptions loaded from markdown files for rich, detailed help text
+
+All tools run in a single MCP server process for simplified deployment.
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"dbt-mcp package not found"**
-   - Install with: `pip install dbt-mcp`
+1. **"DBT_PROJECT_DIR environment variable not set"**
+   - Set `DBT_PROJECT_DIR` environment variable
+   - Ensure you have a valid `dbt_project.yml` file in that directory
 
-2. **"DBT_PROJECT_DIR environment variable not set"**
-   - Create a `.env` file from `.env.example`
-   - Set `DBT_PROJECT_DIR` to your dbt project path
-   - Ensure you have a valid `dbt_project.yml` file
-
-3. **"dbt installation check failed"**
+2. **"dbt command not found"**
    - Verify dbt is installed: `dbt --version`
-   - Ensure dbt is in your PATH
+   - For pyenv users: Set `DBT_PATH` to full dbt executable path
+   - Example: `export DBT_PATH=/Users/username/.pyenv/versions/3.12.11/bin/dbt`
 
-4. **Claude Desktop connection issues**
-   - Check the server path in `claude_config.json`
+3. **"syntax error line 3 at position 2 unexpected 'limit'"**
+   - This occurs with older dbt versions that don't support `--log-format` flag
+   - Solution: Set `DBT_PATH` to a compatible dbt version (≥1.0)
+
+4. **"No valid dbt artifacts found"**
+   - Run `dbt compile` in your dbt project to generate manifest.json
+   - Run `dbt docs generate` to create catalog.json
+   - Ensure target/ directory exists in your dbt project
+
+5. **Claude Desktop connection issues**
+   - Check the server path in Claude Desktop configuration
    - Verify Python can be found at the specified path
    - Check Claude Desktop logs for error messages
 
@@ -119,17 +151,22 @@ The server disables non-core functionality through environment variables:
 
 Test the server manually:
 ```bash
-uvx --env-file .env fsc-dbt-mcp
+python src/fsc_dbt_mcp/server.py
 ```
 
 ## Requirements
 
 - Python 3.12+
-- uv package manager
-- dbt Core installation  
+- dbt Core installation (≥1.0 recommended)
 - Valid dbt project with `dbt_project.yml`
 - dbt profiles configured in `~/.dbt/profiles.yml`
+- Generated dbt artifacts (`target/manifest.json` and `target/catalog.json`)
+
+## Dependencies
+
+- `dbt-mcp>=0.2.5` - Used for reference (not directly imported)
+- `mcp` - Model Context Protocol SDK
 
 ## License
 
-This project builds upon the `dbt-mcp` package from dbt-labs.
+This project is inspired by the `dbt-mcp` package from dbt-labs but implements custom tooling.

@@ -4,18 +4,25 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fsc-dbt-mcp"
-description = "Custom dbt MCP Server - Core Tools Only"
+description = "fsc-dbt-mcp Server - dbt CLI tools and discovery functionality"
 readme = "README.md"
 requires-python = ">=3.12"
+version = "0.1.0"
 authors = [
-    { name = "Custom MCP Server" },
+    { name = "forgxyz" },
 ]
 dependencies = [
-    "dbt-mcp>=1.0.0",
+    "mcp",
 ]
 
 [project.scripts]
 fsc-dbt-mcp = "fsc_dbt_mcp.server:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0"
+]
 
 [tool.uv]
 dev-dependencies = []
