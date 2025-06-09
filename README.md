@@ -6,7 +6,6 @@ A lightweight Model Context Protocol (MCP) server that provides both dbt Core CL
 
 - **dbt CLI Tools**: Essential dbt commands (list, compile, show) 
 - **Discovery Tools**: Custom tools for exploring dbt models and project metadata
-- **Auto-Discovery**: Automatically finds and configures local dbt projects
 - **Claude Desktop Integration**: Ready-to-use configuration for Claude Desktop
 - **Prompt-Based Descriptions**: Rich tool descriptions loaded from markdown files
 
