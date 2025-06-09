@@ -1,58 +1,102 @@
 """
 Discovery tools for dbt model exploration and metadata retrieval.
+
+Follows MCP best practices for input validation, error handling, and security.
 """
 import json
 import os
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple
 from mcp.types import Tool, TextContent
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def load_dbt_artifacts() -> tuple[Dict[str, Any], Dict[str, Any]]:
-    """Load dbt manifest and catalog artifacts."""
-    # Check for artifacts in dev/inputs first, then project directory
+def _validate_file_path(file_path: str) -> Path:
+    """Validate and normalize file path for security."""
+    if not file_path:
+        raise ValueError("File path cannot be empty")
+    
+    # Normalize path and check for traversal attempts
+    normalized_path = Path(file_path).resolve()
+    
+    # Basic security check - ensure file exists and is readable
+    if not normalized_path.exists():
+        raise FileNotFoundError(f"File does not exist: {file_path}")
+    
+    if not normalized_path.is_file():
+        raise ValueError(f"Path is not a file: {file_path}")
+    
+    # Check file size (max 50MB for JSON artifacts)
+    file_size = normalized_path.stat().st_size
+    max_size = 50 * 1024 * 1024  # 50MB
+    if file_size > max_size:
+        raise ValueError(f"File too large: {file_size} bytes (max: {max_size})")
+    
+    return normalized_path
+
+
+def _safe_load_json(file_path: Path) -> Dict[str, Any]:
+    """Safely load JSON file with error handling."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in {file_path}: {str(e)}")
+    except UnicodeDecodeError as e:
+        raise ValueError(f"File encoding error in {file_path}: {str(e)}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to read {file_path}: {str(e)}")
+
+
+def load_dbt_artifacts() -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Load dbt manifest and catalog artifacts with security validation."""
     project_dir = os.getenv('DBT_PROJECT_DIR', os.getcwd())
     
-    # Try dev/inputs path first (for testing)
-    # dev_manifest_path = os.path.join(os.getcwd(), 'dev', 'inputs', 'manifest.json')
-    # dev_catalog_path = os.path.join(os.getcwd(), 'dev', 'inputs', 'catalog.json')
-    dev_manifest_path = "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/dev/inputs/manifest.json"
-    dev_catalog_path = "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/dev/inputs/catalog.json"
-
-    # Try project target path second
-    target_manifest_path = os.path.join(project_dir, 'target', 'manifest.json')
-    target_catalog_path = os.path.join(project_dir, 'target', 'catalog.json')
+    # Define search paths in priority order
+    search_paths = [
+        # Development/testing paths
+        (os.path.join(os.getcwd(), 'target', 'manifest.json'),
+         os.path.join(os.getcwd(), 'target', 'catalog.json')),
+        # Standard dbt target directory
+        (os.path.join(project_dir, 'target', 'manifest.json'),
+         os.path.join(project_dir, 'target', 'catalog.json')),
+    ]
     
     manifest_path = None
     catalog_path = None
     
-    # Determine which paths to use
-    if os.path.exists(dev_manifest_path):
-        manifest_path = dev_manifest_path
-        logger.info(f"Using dev manifest: {manifest_path}")
-    elif os.path.exists(target_manifest_path):
-        manifest_path = target_manifest_path
-        logger.info(f"Using target manifest: {manifest_path}")
-    else:
-        raise FileNotFoundError("No manifest.json found in dev/inputs or target directory")
+    # Find first available artifact pair
+    for manifest_candidate, catalog_candidate in search_paths:
+        try:
+            manifest_path = _validate_file_path(manifest_candidate)
+            catalog_path = _validate_file_path(catalog_candidate)
+            logger.info(f"Using artifacts - Manifest: {manifest_path}, Catalog: {catalog_path}")
+            break
+        except (FileNotFoundError, ValueError):
+            continue
     
-    if os.path.exists(dev_catalog_path):
-        catalog_path = dev_catalog_path
-        logger.info(f"Using dev catalog: {catalog_path}")
-    elif os.path.exists(target_catalog_path):
-        catalog_path = target_catalog_path
-        logger.info(f"Using target catalog: {catalog_path}")
-    else:
-        raise FileNotFoundError("No catalog.json found in dev/inputs or target directory")
+    if not manifest_path or not catalog_path:
+        raise FileNotFoundError(
+            "No valid dbt artifacts found. Searched paths: " +
+            ", ".join([f"{m}, {c}" for m, c in search_paths])
+        )
     
+    # Load and validate JSON files
     try:
-        with open(manifest_path, 'r') as f:
-            manifest = json.load(f)
-        with open(catalog_path, 'r') as f:
-            catalog = json.load(f)
+        manifest = _safe_load_json(manifest_path)
+        catalog = _safe_load_json(catalog_path)
+        
+        # Basic validation of artifact structure
+        if not isinstance(manifest, dict) or 'nodes' not in manifest:
+            raise ValueError("Invalid manifest.json structure")
+        
+        if not isinstance(catalog, dict) or 'nodes' not in catalog:
+            raise ValueError("Invalid catalog.json structure")
+        
         return manifest, catalog
+        
     except Exception as e:
         logger.error(f"Error loading dbt artifacts: {e}")
         raise
@@ -83,44 +127,85 @@ def get_model_details_tool() -> Tool:
     )
 
 
+def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """Validate and extract model identification arguments."""
+    if not isinstance(arguments, dict):
+        raise ValueError("Arguments must be a dictionary")
+    
+    unique_id = arguments.get("uniqueId")
+    model_name = arguments.get("model_name")
+    
+    # Input sanitization
+    if unique_id is not None:
+        if not isinstance(unique_id, str) or not unique_id.strip():
+            raise ValueError("uniqueId must be a non-empty string")
+        unique_id = unique_id.strip()
+        
+        # Basic format validation for unique_id
+        if not unique_id.startswith("model."):
+            raise ValueError("uniqueId must start with 'model.'")
+    
+    if model_name is not None:
+        if not isinstance(model_name, str) or not model_name.strip():
+            raise ValueError("model_name must be a non-empty string")
+        model_name = model_name.strip()
+        
+        # Prevent path traversal and injection attempts
+        if any(char in model_name for char in ['/', '\\', '..', '\x00']):
+            raise ValueError("model_name contains invalid characters")
+    
+    if not unique_id and not model_name:
+        raise ValueError("Either uniqueId or model_name must be provided")
+    
+    return unique_id, model_name
+
+
+def _find_model_node(manifest: Dict[str, Any], unique_id: Optional[str], 
+                     model_name: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Find model node in manifest with proper error handling."""
+    nodes = manifest.get("nodes", {})
+    
+    if not isinstance(nodes, dict):
+        raise ValueError("Invalid manifest structure: 'nodes' is not a dictionary")
+    
+    if unique_id:
+        # Direct lookup by unique_id
+        model_node = nodes.get(unique_id)
+        if model_node and model_node.get("resource_type") == "model":
+            return model_node, unique_id
+        return None, None
+    
+    elif model_name:
+        # Search by model name
+        for node_id, node in nodes.items():
+            if (isinstance(node, dict) and 
+                node.get("resource_type") == "model" and 
+                node.get("name") == model_name):
+                return node, node_id
+    
+    return None, None
+
+
 async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextContent]:
-    """Handle the get_model_details tool invocation."""
+    """Handle the get_model_details tool invocation with comprehensive validation."""
     try:
+        # Validate input arguments
+        unique_id, model_name = _validate_model_arguments(arguments)
+        
+        # Load artifacts
         manifest, catalog = load_dbt_artifacts()
         
-        unique_id = arguments.get("uniqueId")
-        model_name = arguments.get("model_name")
+        # Find the model
+        model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name)
         
-        # Find the model in manifest
-        model_node = None
-        
-        if unique_id:
-            # Direct lookup by unique_id
-            model_node = manifest.get("nodes", {}).get(unique_id)
-            if not model_node:
-                return [TextContent(
-                    type="text",
-                    text=f"Model with uniqueId '{unique_id}' not found in manifest"
-                )]
-        elif model_name:
-            # Search by model name
-            for node_id, node in manifest.get("nodes", {}).items():
-                if (node.get("resource_type") == "model" and 
-                    node.get("name") == model_name):
-                    model_node = node
-                    unique_id = node_id
-                    break
-            
-            if not model_node:
-                return [TextContent(
-                    type="text",
-                    text=f"Model with name '{model_name}' not found in manifest"
-                )]
-        else:
+        if not model_node or not found_unique_id:
+            identifier = unique_id if unique_id else model_name
             return [TextContent(
                 type="text",
-                text="Either uniqueId or model_name must be provided"
+                text=f"Model '{identifier}' not found in manifest"
             )]
+        
+        unique_id = found_unique_id
         
         # Get catalog information if available
         catalog_node = catalog.get("nodes", {}).get(unique_id, {})
@@ -309,9 +394,21 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
         
         return [TextContent(type="text", text="\n".join(response_lines))]
         
-    except Exception as e:
-        logger.error(f"Error in get_model_details: {e}")
+    except FileNotFoundError as e:
+        logger.error(f"File not found in get_model_details: {e}")
         return [TextContent(
             type="text",
-            text=f"Error retrieving model details: {str(e)}"
+            text=f"Required dbt artifacts not found: {str(e)}"
+        )]
+    except ValueError as e:
+        logger.error(f"Invalid input in get_model_details: {e}")
+        return [TextContent(
+            type="text",
+            text=f"Invalid input: {str(e)}"
+        )]
+    except Exception as e:
+        logger.error(f"Unexpected error in get_model_details: {e}")
+        return [TextContent(
+            type="text",
+            text=f"Internal error retrieving model details: {str(e)}"
         )]

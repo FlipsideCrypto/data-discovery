@@ -97,7 +97,7 @@ The server should **overwrite** and restrict tools that alter data
 ## Integration Requirements
 
 ### Claude Desktop Configuration
-Maintain a `claude_config.json` that:
+Maintain a `claude_config.example.json` that:
 - Defines the MCP server endpoint
 - Specifies the server startup command
 - Includes any required environment variables

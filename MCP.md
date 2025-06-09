@@ -12,7 +12,7 @@
 
 ## Overview
 
-The Model Context Protocol (MCP) is an open standard that enables seamless integration between Large Language Model (LLM) applications and external data sources and tools. MCP allows AI assistants to securely access and interact with local and remote resources while maintaining user control and consent.
+The Model Context Protocol (MCP) is an open standard that enables seamless integration between Large Language Model (LLM) applications and external data sources and tools. MCP allows AI assistants to securely access and interact with local and remote resources while maintaining user control and consent. This developer guide is a summarization of the repository `modelcontextprotocol/modelcontextprotocol`. The repository should be referred to, as needed, for the most up to date documentation.  
 
 ### Key Benefits
 - **Universal Connectivity**: Connect AI applications to any data source or tool through a standardized interface

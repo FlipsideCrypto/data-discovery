@@ -1,18 +1,14 @@
 {
   "mcpServers": {
-    "dbt-core": {
-      "command": "uvx",
-      "args": [
-        "--env-file",
-        "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/.env",
-        "dbt-mcp"
-      ]
-    },
-    "dbt-discovery": {
+    "fsc-dbt-mcp": {
       "command": "python",
       "args": [
-        "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/run_discovery_server.py"
-      ]
+        "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/src/fsc_dbt_mcp/server.py"
+      ],
+      "env": {
+        "DBT_PROJECT_DIR": "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp",
+        "DEBUG": "false"
+      }
     }
   }
 }
