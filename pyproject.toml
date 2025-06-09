@@ -7,11 +7,12 @@ name = "fsc-dbt-mcp"
 description = "Custom dbt MCP Server - Core Tools Only"
 readme = "README.md"
 requires-python = ">=3.12"
+version = "0.1.0"
 authors = [
     { name = "Custom MCP Server" },
 ]
 dependencies = [
-    "dbt-mcp>=1.0.0",
+    "dbt-mcp>=0.2.5",
 ]
 
 [project.scripts]

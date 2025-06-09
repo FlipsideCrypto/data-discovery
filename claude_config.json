@@ -4,8 +4,14 @@
       "command": "uvx",
       "args": [
         "--env-file",
-        "/path/to/your/fsc-dbt-mcp/.env",
+        "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/.env",
         "dbt-mcp"
+      ]
+    },
+    "dbt-discovery": {
+      "command": "python",
+      "args": [
+        "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/run_discovery_server.py"
       ]
     }
   }

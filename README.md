@@ -4,7 +4,8 @@ A lightweight Model Context Protocol (MCP) server that exposes only dbt Core fun
 
 ## Features
 
-- **Core dbt Operations Only**: Exposes only essential dbt commands (run, test, compile, parse, clean, deps)
+- **Core dbt Operations**: Exposes essential dbt commands (run, test, compile, parse, clean, deps)
+- **Discovery Tools**: Custom tools for exploring dbt models and project metadata
 - **Auto-Discovery**: Automatically finds and configures local dbt projects
 - **Claude Desktop Integration**: Ready-to-use configuration for Claude Desktop
 - **Lightweight**: Minimal dependencies and focused functionality
@@ -58,41 +59,65 @@ The server looks for dbt profiles in:
             "/path/to/your/fsc-dbt-mcp/.env",
             "dbt-mcp"
          ]
+       },
+       "dbt-discovery": {
+         "command": "python",
+         "args": [
+           "/path/to/your/fsc-dbt-mcp/run_discovery_server.py"
+         ]
        }
      }
    }
    ```
 
-3. **Restart Claude Desktop** to load the new MCP server.
+3. **Restart Claude Desktop** to load the new MCP servers.
 
 ## Usage
 
-Once configured with Claude Desktop, you can use dbt commands through Claude:
+Once configured with Claude Desktop, you can use dbt commands and discovery tools through Claude:
 
+**dbt Core Commands:**
 - "Run my dbt models"
 - "Test the dbt project"
 - "Compile the dbt project"
 - "Show me the dbt project structure"
 - "Clean dbt artifacts"
 
-## Available dbt Core Tools
+**Discovery Tools:**
+- "Get details about the customer_orders model"
+- "Show me information about model.my_project.sales_summary"
+- "What columns does the users table have?"
 
-The server exposes only these essential dbt operations:
+## Available Tools
+
+### dbt Core Tools (via dbt-mcp)
 - `dbt run` - Execute models
 - `dbt test` - Run tests  
 - `dbt compile` - Compile models
 - `dbt parse` - Parse project
 - `dbt clean` - Clean artifacts
 - `dbt deps` - Install dependencies
+- `dbt build` - Run models and tests in DAG order
+- `dbt show` - Execute arbitrary SQL queries
 - Model and test file reading
 - Project structure exploration
 
+### Discovery Tools (custom)
+- `get_model_details` - Retrieve comprehensive model metadata including:
+  - Model description, schema, database, materialization
+  - Column details with types, descriptions, and comments  
+  - Dependencies (refs and sources)
+  - Statistics from catalog
+  - Raw and compiled SQL
+  - Tags, meta properties, and constraints
+
 ## Tool Filtering
 
-The server disables non-core functionality through environment variables:
+**Important**: The dbt-core server disables non-core functionality of `dbt-mcp` through environment variables:
 - `DISABLE_SEMANTIC_LAYER=true` - Disables semantic layer tools
-- `DISABLE_DISCOVERY=true` - Disables discovery API tools
 - `DISABLE_REMOTE=true` - Disables remote tools
+
+The discovery tools run in a separate server process and are not affected by these settings.
 
 ## Troubleshooting
 
