@@ -55,8 +55,8 @@ The server looks for dbt profiles in:
          "command": "uvx",
          "args": [
            "--env-file",
-           "/path/to/your/fsc-dbt-mcp/.env",
-           "fsc-dbt-mcp"
+            "/path/to/your/fsc-dbt-mcp/.env",
+            "dbt-mcp"
          ]
        }
      }
