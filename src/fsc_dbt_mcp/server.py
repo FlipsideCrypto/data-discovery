@@ -25,6 +25,7 @@ if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
 from fsc_dbt_mcp.tools.discovery import get_model_details_tool, handle_get_model_details
+from fsc_dbt_mcp.tools.dbt_cli import get_dbt_cli_tools, handle_dbt_cli_tool, is_dbt_cli_tool
 
 # Configure logging
 logging.basicConfig(
@@ -61,9 +62,19 @@ def create_server() -> Server:
     
     @server.list_tools()
     async def list_tools():
-        """List available discovery tools."""
+        """List available discovery and dbt CLI tools."""
         try:
-            return [get_model_details_tool()]
+            tools = []
+            
+            # Add custom discovery tools
+            tools.append(get_model_details_tool())
+            
+            # Add dbt CLI tools
+            dbt_tools = get_dbt_cli_tools()
+            tools.extend(dbt_tools)
+            
+            logger.info(f"Listed {len(tools)} total tools ({len(dbt_tools)} dbt CLI tools)")
+            return tools
         except Exception as e:
             logger.error(f"Error listing tools: {e}")
             raise RuntimeError(f"Failed to list tools: {str(e)}")
@@ -82,6 +93,8 @@ def create_server() -> Server:
             # Route to appropriate tool handler
             if name == "get_model_details":
                 return await handle_get_model_details(arguments)
+            elif is_dbt_cli_tool(name):
+                return await handle_dbt_cli_tool(name, arguments)
             else:
                 raise ValueError(f"Unknown tool: {name}")
                 

@@ -6,8 +6,10 @@
         "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/src/fsc_dbt_mcp/server.py"
       ],
       "env": {
-        "DBT_PROJECT_DIR": "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp",
-        "DEBUG": "false"
+        "DBT_PATH": "/Users/jackforgash/.pyenv/versions/3.12.11/bin/dbt",
+        "DBT_PROJECT_DIR": "/Users/jackforgash/gh/fs/bitcoin-models",
+        "DBT_PROFILES_DIR": "/Users/jackforgash/.dbt",
+        "DEBUG": "true"
       }
     }
   }

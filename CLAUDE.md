@@ -1,193 +1,214 @@
-# Custom dbt MCP Server Build Instructions
+# FSC dbt MCP Server Development Guide
 
 ## Project Overview
-Build a lightweight, custom Model Context Protocol (MCP) server that integrates with dbt projects to define custom tools for data discovery. The package `dbt-labs/dbt-mcp` will be used for Core CLI tools, but everything else will be custom built. This MCP server will read dbt JSON artifacts `catalog.json` and `manifest.json` to return model details, lineage, metadata, and more to a LLM client. In development, these files will be provided in the project directory. In practice, these files are accessible from the dbt project repositories where they are executed using Github Actions.  
+Build a lightweight, custom Model Context Protocol (MCP) server that integrates with dbt projects to define custom tools for data discovery. This MCP server reads dbt JSON artifacts `catalog.json` and `manifest.json` to return model details, lineage, metadata, and more to a LLM client. 
 
-## Requirements
+**Current State**: Core functionality completed for local dbt projects. Next priority is supporting remote GitHub-hosted dbt projects.
 
-### Dependencies
-- Python 3.12+
-- `dbt-mcp` package from dbt-labs/dbt-mcp
-- MCP SDK for Python. Documentaion on developing MCP servers available in @MCP.md
-- Local dbt project(s) on the machine for development
+## ✅ COMPLETED PHASE 1: Local dbt Project Support
 
-### Core Functionality
-- Import and use `dbt-mcp` as the base for core tooling
-- Enable ONLY dbt Core tools (disable all other tool categories) from `dbt-mcp`
-- Build custom data discovery tools that parse and traverse the JSON artifacts
-- Provide Claude Desktop-compatible MCP server configuration
+### Implemented Components
 
-## Technical Specifications
+#### 1. Unified MCP Server (`src/fsc_dbt_mcp/server.py`)
+- ✅ Single MCP server combining dbt CLI and discovery tools
+- ✅ Comprehensive error handling and logging
+- ✅ Environment variable configuration (`DBT_PROJECT_DIR`, `DBT_PATH`)
+- ✅ Claude Desktop compatibility
 
-### Project Structure
-Organize primitives in proper directories. Follow standard `src/` namespace convention.  
+#### 2. dbt CLI Tools (3 tools - `src/fsc_dbt_mcp/tools/dbt_cli.py`)
+- ✅ **`dbt_list`** - List dbt resources with optional selectors
+- ✅ **`dbt_compile`** - Compile dbt models to SQL
+- ✅ **`dbt_show`** - Execute inline SQL queries with sample results
+- ✅ Direct subprocess calls to dbt CLI with proper logging
+- ✅ Support for `DBT_PATH` environment variable (pyenv compatibility)
+
+#### 3. Discovery Tools (1 tool - `src/fsc_dbt_mcp/tools/discovery.py`)
+- ✅ **`get_model_details`** - Comprehensive model metadata including:
+  - Model description, schema, database, materialization
+  - Column details with types, descriptions, and comments
+  - Dependencies (refs and sources)  
+  - Statistics from catalog
+  - Raw and compiled SQL
+  - Tags, meta properties, and constraints
+
+#### 4. Prompt System (`src/fsc_dbt_mcp/prompts/`)
+- ✅ **`get_prompt()`** function following dbt-labs pattern
+- ✅ Markdown-based tool descriptions
+- ✅ Rich, detailed help text for tools
+- ✅ Selector guidance and dbt_show usage instructions
+
+#### 5. Project Structure
 ```
 fsc-dbt-mcp/
 ├── src/
 │   └── fsc_dbt_mcp/
 │       ├── __init__.py
-│       ├── server.py
+│       ├── server.py                    ✅ Unified MCP server
 │       ├── prompts/
-│       ├── resources/
+│       │   ├── prompts.py              ✅ Prompt loader
+│       │   ├── dbt_cli/
+│       │   │   └── dbt_show.md         ✅ dbt_show tool description
+│       │   └── shared/
+│       │       └── selector.md         ✅ Selector parameter guidance
+│       ├── resources/                   ✅ Documentation resources
 │       └── tools/
 │           ├── __init__.py
-│           └── discovery.py
+│           ├── discovery.py            ✅ Model discovery tools
+│           └── dbt_cli.py              ✅ dbt CLI integration
 ```
 
-### Key Components
+#### 6. Configuration & Documentation
+- ✅ **README.md** - Complete setup and usage guide
+- ✅ **pyproject.toml** - Project configuration with minimal dependencies
+- ✅ **claude_config.json** - Ready-to-use Claude Desktop configuration
+- ✅ Environment variable documentation and troubleshooting
 
-#### Base Server Implementation (`server.py`)
-- Import the dbt-mcp package
-- Initialize MCP server with only Core CLI tools enabled
-- Implement proper error handling and logging
-- Ensure compatibility with Claude Desktop's MCP client
-From dbt-mcp package, identify and ENABLE only:
-- **Core Tools**: Basic dbt operations (run, test, compile, parse, etc.)
+### Architecture Decision: Custom Implementation vs dbt-mcp
+**Decision Made**: Instead of importing `dbt-mcp` package, we implemented custom dbt CLI tools using subprocess calls. This provides:
+- Better control over command execution and logging
+- Simplified dependencies (only `mcp` SDK required)
+- More transparent error handling
+- Easier customization for specific use cases
 
-DISABLE these categories:
-- Documentation tools
-- Lineage/visualization tools  
-- Advanced analytics tools
-- Any non-essential tooling that requires dbt Cloud
+## 🚀 PHASE 2: Remote GitHub dbt Projects (PRIORITY)
 
-#### Custom Tools (`src/fsc_dbt_mcp/tools`)
-- Build custom tools for data discovery and integrate into the custom MCP server
-- Integrate into a singular `server.py` runtime file, allowing for usage of core `dbt-mcp` CLI tools alongside custom tools in a single MCP Server
+### Current Challenge
+All testing has been done on local dbt projects. Our dbt projects live on GitHub, so the required JSON artifacts (`manifest.json`, `catalog.json`) that contain the data for the discovery tools live across different GitHub repositories.
 
-A non-final list of proposed tools is provided, inspired by current discovery tools built into `dbt-labs/dbt-mcp` and an open source project `mattijsdp/dbt-docs-mcp`.  
+### Requirements
+- **QUICK and EFFICIENT** access to JSON artifacts from GitHub repositories
+- Support for multiple GitHub repositories containing different dbt projects
+- Caching strategy to avoid repeated API calls
+- Authentication handling for private repositories
+- Fallback mechanisms when artifacts are unavailable
 
-| Tool Name             | Description                                                     | **dbt-docs-mcp equivalent** |
-| --------------------- | --------------------------------------------------------------- | --------------------------- |
-| get_gold_models       | Gets all gold models                                            |                             |
-| get_all_models        | Gets all models                                                 |                             |
-| get_model_details     | Gets details for a specific model                               | `get_dbt_node_attributes`   |
-| get_model_parents     | Gets parent nodes of a specific model                           | `get_dbt_predecessors`      |
-| get_model_children    | Gets children modes of a specific model                         | `get_dbt_successors`        |
-| search_by_object_name | Find nodes (models, sources, tests, etc.) by name               | `search_dbt_node_names`     |
-| search_by_column_name | Locate nodes based on column names                              | `search_dbt_column_names`   |
-| search_by_sql_code    | Search within the compiled SQL code of nodes                    | `search_dbt_sql_code`       |
-| TBD if implementing   | Trace all upstream sources for a specific column in a model     | `get_column_ancestors`      |
-| TBD if implementing   | Trace all downstream dependents of a specific column in a model | `get_column_descendants`    |
+### Implementation Considerations
 
+#### Potential Approaches
+1. **GitHub API Integration**
+   - Direct API calls to fetch `target/manifest.json` and `target/catalog.json`
+   - OAuth token authentication
+   - Rate limiting and caching
 
-### Implementation Requirements
+2. **GitHub Actions Artifacts**
+   - Access artifacts uploaded by GitHub Actions workflows
+   - May require different API endpoints and authentication
 
-#### Core dbt Tools to Expose
-The server should expose these essential dbt Core operations:
-- `dbt ls` -  Lists resources in the dbt project, such as models and tests
-- `dbt compile` - Compile models
-- `dbt parse` - Parse project
-- `dbt show` - Runs a query against the data warehouse returning a data sample
+3. **Configuration-Based Repository Mapping**
+   - Environment variables or config file specifying repository URLs
+   - Support for multiple projects/repositories
 
-The server should **overwrite** and restrict tools that alter data
-- `dbt run` - Execute models
-- `dbt test` - Run tests
+#### Environment Variables for Remote Support
+```bash
+# Required for remote GitHub support
+GITHUB_TOKEN=ghp_xxx                    # GitHub API token
+GITHUB_REPOS=org/repo1,org/repo2        # Comma-separated repository list
+GITHUB_ARTIFACTS_BRANCH=main            # Branch containing artifacts (default: main)
 
-#### Configuration Features
-- Support for multiple dbt projects
-- Environment variable handling for dbt configurations
-- Validation of dbt installation and project health
-
-#### Error Handling
-- Graceful handling of missing dbt installations
-- Clear error messages for invalid dbt projects
-- Proper logging for debugging
-- Fallback behaviors when dbt operations fail
-
-## Integration Requirements
-
-### Claude Desktop Configuration
-Maintain a `claude_config.example.json` that:
-- Defines the MCP server endpoint
-- Specifies the server startup command
-- Includes any required environment variables
-- Provides clear server identification
-- Use best practices for starting the server, whether a `python` or `uvx` command
-
-### Example Configuration Structure
-```json
-{
-  "mcpServers": {
-    "fsc-dbt-mcp": {
-      "command": "python",
-      "args": ["path/to/server.py"],
-      "env": {
-        "DBT_PROJECT_PATH": "/path/to/dbt/project"
-      }
-    }
-  }
-}
+# Optional caching
+ARTIFACTS_CACHE_TTL=3600                # Cache TTL in seconds
+ARTIFACTS_CACHE_DIR=/tmp/fsc-dbt-cache  # Local cache directory
 ```
 
-## Development Guidelines
+## 🔮 FUTURE ROADMAP
 
-**IMPORTANT**: For detailed MCP development guidance, security best practices, and implementation patterns, refer to [MCP.md](./MCP.md) which contains comprehensive documentation on the Model Context Protocol.
+### Phase 3: Enhanced Discovery Tools
 
-### Code Quality
-- Use type hints throughout
-- Implement comprehensive error handling
-- Add logging for debugging and monitoring
-- Follow Python best practices and PEP 8
-- Include docstrings for all functions and classes
+#### New Tool: `generate_expert_context`
+- **Purpose**: Return prompt context for "blockchain experts"
+- **Status**: Concept phase - definition needed
+- **Implementation**: TBD
 
-### Testing Considerations
-- Validate against real dbt projects
-- Test with different dbt project structures
-- Ensure compatibility with various dbt versions
-- Test Claude Desktop integration
+#### Additional Discovery Tools (from original roadmap)
+| Tool Name             | Status | Description                                                     |
+| --------------------- | ------ | --------------------------------------------------------------- |
+| get_gold_models       | 📋 TODO | Gets all gold models                                            |
+| get_all_models        | 📋 TODO | Gets all models                                                 |
+| get_model_parents     | 📋 TODO | Gets parent nodes of a specific model                           |
+| get_model_children    | 📋 TODO | Gets children modes of a specific model                         |
+| search_by_object_name | 📋 TODO | Find nodes (models, sources, tests, etc.) by name               |
+| search_by_column_name | 📋 TODO | Locate nodes based on column names                              |
+| search_by_sql_code    | 📋 TODO | Search within the compiled SQL code of nodes                    |
 
-### Security
-- Validate all file paths to prevent directory traversal
-- Sanitize inputs for dbt commands
-- Implement proper permission checking
-- Avoid exposing sensitive configuration data
+### Phase 4: Resources and Contextual Information
 
-## Deliverables
+#### Resource: Supported Blockchains
+- **Purpose**: Reference of supported blockchain networks
+- **Implementation**: TBD - could be JSON file, markdown resource, or dynamic tool
+- **Integration**: Likely consumed by discovery tools and expert context generation
 
-### 1. Complete MCP Server (`server.py`)
-A fully functional MCP server that:
-- Imports and configures dbt-mcp with Core tools only
-- Handles local or remote dbt project integration
-- Provides clean API for Claude Desktop
-- Includes comprehensive error handling
-- Returns a suite of tools for data discovery
+#### Resource/Prompt: Flipside Model Structure
+- **Purpose**: Context for Flipside's medallion standard architecture
+- **Content**:
+  - Definition of schema layers (bronze, silver, gold)
+  - Gold schema breakdown (defi, nft, core, etc.)
+  - Model naming conventions
+  - Data governance patterns
+- **Implementation**: Markdown resources + prompts
 
-### 2. Dependencies (`requirements.txt`)
-Complete list of required packages with versions
+## Technical Implementation Notes
 
-### 3. Documentation (`README.md`)
-- Installation instructions
-- Configuration guide
-- Claude Desktop setup steps
-- Troubleshooting guide
-- Usage examples
+### Current Dependencies
+```toml
+dependencies = [
+    "mcp",              # MCP SDK
+]
+```
 
-### 4. Claude Configuration (`claude_config.json`)
-Ready-to-use configuration file for Claude Desktop integration
+### Future Dependencies (for GitHub support)
+```toml
+dependencies = [
+    "mcp",              # MCP SDK  
+    "requests",         # HTTP client for GitHub API
+    "aiohttp",          # Async HTTP for better performance
+    "python-dotenv",    # Environment configuration
+]
+```
 
-## Implementation Notes
+### Security Considerations for Remote Access
+- GitHub token secure storage and rotation
+- Repository access validation
+- Artifact content validation (prevent malicious JSON)
+- Rate limiting and respectful API usage
+- Audit logging for artifact access
 
-### dbt-mcp Package Integration
-- Study the `dbt-labs/dbt-mcp` package structure to understand tool categories
-- Study `mattijsdp/dbt-docs-mcp` for one example of an open source data discovery server that utilizes JSON artifacts
-- Identify the specific Core tools and their implementations
-- Understand the package's configuration system
-- Determine how to selectively enable/disable tool categories
-
-### MCP Protocol Compliance
-- Ensure full compliance with MCP specification (see [MCP.md](./MCP.md) for complete protocol documentation)
-- Implement proper resource discovery
-- Handle tool invocation correctly
-- Provide appropriate metadata and descriptions
+### Performance Requirements
+- **Target**: <2 second response time for cached artifacts
+- **Target**: <5 second response time for fresh GitHub API calls  
+- **Caching**: Implement TTL-based caching with configurable refresh
+- **Concurrency**: Support parallel artifact fetching for multiple repositories
 
 ## Success Criteria
 
-The completed MCP server should:
-1. Successfully integrate with the dbt-mcp package
-2. Expose only dbt Core functionality to Claude
-3. Provide custom data discovery tools, resources and prompts
-4. Integrate seamlessly with Claude Desktop
-5. Provide robust error handling and logging
-6. Be easily configurable for different environments
+### Phase 2 (Remote GitHub Support)
+1. Successfully fetch and parse dbt artifacts from GitHub repositories
+2. Maintain sub-5-second response times for discovery tools
+3. Robust error handling for network issues and missing artifacts
+4. Support for multiple dbt projects across different repositories
+5. Secure and efficient GitHub API integration
 
-This implementation will provide a clean, focused interface for working with dbt Core functionality through Claude Desktop while maintaining the flexibility to expand functionality in the future.
+### Future Phases
+1. Complete set of discovery tools matching `dbt-docs-mcp` functionality
+2. Rich contextual resources for blockchain and Flipside-specific information
+3. Expert context generation for domain-specific assistance
+4. Scalable architecture supporting multiple organizations and project structures
+
+## Development Priorities
+
+**IMMEDIATE (Phase 2)**:
+1. 🔥 **GitHub API integration** for artifact fetching
+2. 🔥 **Caching mechanism** for performance
+3. 🔥 **Multi-repository configuration** support
+4. 🔥 **Authentication and security** implementation
+
+**SHORT TERM**:
+1. Additional discovery tools (get_all_models, search functions)
+2. generate_expert_context tool definition and implementation
+3. Supported blockchains resource
+
+**MEDIUM TERM**:
+1. Flipside model structure resources
+2. Advanced lineage and dependency tools
+3. Performance optimizations and caching improvements
+
+This roadmap provides a clear path from the current local-only implementation to a comprehensive, GitHub-integrated dbt discovery platform optimized for blockchain data analysis workflows.
