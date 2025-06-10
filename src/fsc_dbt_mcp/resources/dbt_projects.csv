@@ -1,0 +1,12 @@
+id,name,blockchain,category,type,location,target_branch,aliases,schemas
+arbitrum-models,Arbitrum Models,arbitrum,evm,github,FlipsideCrypto/arbitrum-models,docs,arbitrum|arb|arbitrum_models,core|bronze|silver|gold|defi
+avalanche-models,Avalanche Models,avalanche,evm,github,FlipsideCrypto/avalanche-models,docs,avalanche|avax|avalanche_models,core|bronze|silver|gold|defi
+bitcoin-models,Bitcoin Models,bitcoin,l1,github,FlipsideCrypto/bitcoin-models,docs,bitcoin|btc|bitcoin_models,core|bronze|silver|gold
+crosschain-models,Crosschain Models,multi-chain,multi-chain,github,FlipsideCrypto/crosschain-models,docs,crosschain|multi-chain|cross-chain,core|bronze|silver|gold|defi
+ethereum-models,Ethereum Models,ethereum,evm,github,FlipsideCrypto/ethereum-models,docs,ethereum|eth|ethereum_models,core|bronze|silver|gold|defi|nft
+flow-models,Flow Models,flow,l1|evm,github,FlipsideCrypto/flow-models,docs,flow|flow_models|flow_evm,core|bronze|silver|gold|defi
+kairos-models,Kairos Models,multi-chain,internal,github,FlipsideCrypto/kairos-models,docs,kairos|metrics,core|bronze|silver|gold
+near-models,Near Models,near,l1,github,FlipsideCrypto/near-models,docs,near|near_models,core|bronze|silver|gold|defi
+optimism-models,Optimism Models,optimism,evm,github,FlipsideCrypto/optimism-models,docs,optimism|op|optimism_models,core|bronze|silver|gold|defi
+polygon-models,Polygon Models,polygon,evm,github,FlipsideCrypto/polygon-models,docs,polygon|matic|poly|polygon_models,core|bronze|silver|gold|defi
+solana-models,Solana Models,solana,svm,github,FlipsideCrypto/solana-models,docs,solana|sol|solana_models,core|bronze|silver|gold|defi
