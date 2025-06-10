@@ -24,7 +24,7 @@ src_dir = server_dir / "src"
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from fsc_dbt_mcp.tools.discovery import get_model_details_tool, handle_get_model_details, get_description_tool, handle_get_description
+from fsc_dbt_mcp.tools.discovery import get_model_details_tool, handle_get_model_details, get_description_tool, handle_get_description, get_models_tool, handle_get_models
 from fsc_dbt_mcp.tools.dbt_cli import get_dbt_cli_tools, handle_dbt_cli_tool, is_dbt_cli_tool
 
 # Configure logging
@@ -69,6 +69,7 @@ def create_server() -> Server:
             # Add custom discovery tools
             tools.append(get_model_details_tool())
             tools.append(get_description_tool())
+            tools.append(get_models_tool())
             
             # Add dbt CLI tools
             dbt_tools = get_dbt_cli_tools()
@@ -96,6 +97,8 @@ def create_server() -> Server:
                 return await handle_get_model_details(arguments)
             elif name == "get_description":
                 return await handle_get_description(arguments)
+            elif name == "get_models":
+                return await handle_get_models(arguments)
             elif is_dbt_cli_tool(name):
                 return await handle_dbt_cli_tool(name, arguments)
             else:

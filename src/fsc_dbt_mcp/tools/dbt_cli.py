@@ -102,7 +102,8 @@ def get_dbt_cli_tools() -> List[Tool]:
                         "type": "string",
                         "description": get_prompt("dbt_cli/selector")
                     }
-                }
+                },
+                "additionalProperties": False
             }
         ),
         Tool(
@@ -115,7 +116,8 @@ def get_dbt_cli_tools() -> List[Tool]:
                         "type": "string",
                         "description": get_prompt("dbt_cli/selector")
                     }
-                }
+                },
+                "additionalProperties": False
             }
         ),
         Tool(
@@ -136,8 +138,9 @@ def get_dbt_cli_tools() -> List[Tool]:
                         "maximum": 10
                     }
                 },
-                "required": ["sql_query"]
-            }
+                "required": ["sql_query"],
+                "additionalProperties": False
+            },
         )
     ]
     
