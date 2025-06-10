@@ -89,6 +89,14 @@ class ProjectManager:
         
         # Validate each resource ID exists in resource registry
         for resource_id in resource_ids:
+            # Check for None/null values in the list
+            if resource_id is None or resource_id == "null":
+                raise ValueError(f"resource_id cannot be null. Available resources: {available_resource_ids}")
+            
+            # Check for empty strings
+            if not isinstance(resource_id, str) or not resource_id.strip():
+                raise ValueError(f"resource_id must be a non-empty string. Available resources: {available_resource_ids}")
+            
             if resource_id not in available_resource_ids:
                 raise ValueError(f"Unknown resource ID: {resource_id}. Available resources: {available_resource_ids}")
         

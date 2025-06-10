@@ -173,6 +173,10 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
         
         # Add column information from manifest
         manifest_columns = model_node.get("columns", {})
+        # Ensure manifest_columns is a dictionary, not None
+        if not isinstance(manifest_columns, dict):
+            manifest_columns = {}
+            
         columns = {}
         for col_name, col_info in manifest_columns.items():
             columns[col_name] = {
@@ -186,6 +190,10 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
         
         # Enhance with catalog column information if available
         catalog_columns = catalog_node.get("columns", {})
+        # Ensure catalog_columns is a dictionary, not None
+        if not isinstance(catalog_columns, dict):
+            catalog_columns = {}
+            
         for col_name, col_info in catalog_columns.items():
             if col_name in columns:
                 columns[col_name].update({

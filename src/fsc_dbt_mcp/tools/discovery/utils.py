@@ -53,6 +53,7 @@ def _safe_load_json(file_path: Path) -> Dict[str, Any]:
 
 def load_dbt_artifacts() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Load dbt manifest and catalog artifacts with security validation."""
+    # TODO - legacy support. CAN DROP
     project_dir = os.getenv('DBT_PROJECT_DIR', os.getcwd())
     
     # Define search paths in priority order

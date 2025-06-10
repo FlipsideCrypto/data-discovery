@@ -31,9 +31,12 @@ Lists all available dbt project resources (blockchain datasets) that can be used
 **Category** - Technical classification of the blockchain ecosystem:
 - **"evm"** - Ethereum Virtual Machine compatible chains (Ethereum, Polygon, Arbitrum, Avalanche, etc.)
 - **"l1"** - Layer 1 blockchains (Bitcoin, Near, Flow)
+- **"ibc"** - Interblockchain aka Cosmos ecosystem
 - **"svm"** - Solana Virtual Machine projects (Solana)
+- **"bitcoin-l2"** - Bitcoin Layer 2 solution
 - **"multi-chain"** - Cross-chain and bridge protocols
 - **"internal"** - FlipsideCrypto internal tools and metrics
+- And possibly others
 
 **Schemas** - Data layers following the medallion architecture:
 - **"bronze"** - Raw, unprocessed blockchain data
@@ -42,6 +45,9 @@ Lists all available dbt project resources (blockchain datasets) that can be used
 - **"core"** - Essential standardized tables (fact_transactions, dim_contracts, etc.)
 - **"defi"** - DeFi protocol specific data (DEXs, lending, etc.)
 - **"nft"** - NFT marketplace and collection data
+- **"price"** - Provides asset price and token metadata
+- **"stats"** - Aggregated blockchain statistics
+- Possibly more, depending on the project.
 
 **Blockchain Filter with Alias Support:**
 The `blockchain_filter` parameter matches against both the main blockchain name AND all aliases. Examples:
