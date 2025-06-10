@@ -16,13 +16,14 @@ Build a lightweight, custom Model Context Protocol (MCP) server that integrates 
 - ✅ Claude Desktop compatibility
 
 #### 2. dbt CLI Tools (3 tools - `src/fsc_dbt_mcp/tools/dbt_cli.py`)
-- ✅ **`dbt_list`** - List dbt resources with optional selectors
-- ✅ **`dbt_compile`** - Compile dbt models to SQL
-- ✅ **`dbt_show`** - Execute inline SQL queries with sample results
+- ✅ **`dbt_list`** - List dbt resources with optional selectors ⚠️ *Single project only*
+- ✅ **`dbt_compile`** - Compile dbt models to SQL ⚠️ *Single project only*
+- ✅ **`dbt_show`** - Execute inline SQL queries with sample results ⚠️ *Single project only*
 - ✅ Direct subprocess calls to dbt CLI with proper logging
 - ✅ Support for `DBT_PATH` environment variable (pyenv compatibility)
+- ⚠️ **Limitation**: Not yet updated for multi-project support (Phase 3 priority)
 
-#### 3. Discovery Tools (1 tool - `src/fsc_dbt_mcp/tools/discovery.py`)
+#### 3. Discovery Tools (3 tools - `src/fsc_dbt_mcp/tools/discovery/`)
 - ✅ **`get_model_details`** - Comprehensive model metadata including:
   - Model description, schema, database, materialization
   - Column details with types, descriptions, and comments
@@ -30,6 +31,15 @@ Build a lightweight, custom Model Context Protocol (MCP) server that integrates 
   - Statistics from catalog
   - Raw and compiled SQL
   - Tags, meta properties, and constraints
+  - **Multi-project support** with intelligent project detection
+- ✅ **`get_description`** - Documentation block retrieval with:
+  - Expert context from `__MCP__` blocks
+  - Project-specific documentation
+  - **Requires project_id** to prevent cross-contamination
+- ✅ **`get_models`** - Model listing and filtering with:
+  - Schema and medallion level filtering
+  - Multi-project hierarchical results
+  - Project-aware model discovery
 
 #### 4. Prompt System (`src/fsc_dbt_mcp/prompts/`)
 - ✅ **`get_prompt()`** function following dbt-labs pattern
@@ -70,149 +80,121 @@ fsc-dbt-mcp/
 - More transparent error handling
 - Easier customization for specific use cases
 
-## 🚀 PHASE 2A: Multi-Project Support (PRIORITY)
+## ✅ PHASE 2A: Multi-Project Support (COMPLETED)
 
-### Current Challenge
-The existing server supports only a single dbt project via `DBT_PROJECT_DIR`. We need to scale to support multiple dbt projects (starting with 3, ultimately unlimited) while maintaining MCP best practices and backward compatibility.
+### Current State: **SHIPPED** ✅
+Multi-project support has been successfully implemented and tested. All discovery tools now support project-aware operations with intelligent context handling.
 
-### Requirements
-- **Resource-first discovery**: MCP resource to list available projects
-- **Project-aware tools**: Existing tools enhanced with optional `project_id` parameter
-- **Backward compatibility**: Single-project configurations continue to work
+### ✅ Implemented Components
+
+#### 1. MCP Resources System (`src/fsc_dbt_mcp/resources/`)
+- ✅ **ResourceRegistry** - Centralized resource management with DRY principles
+- ✅ **Project Resource Definitions** - Bitcoin, Ethereum, and Kairos models
+- ✅ **MCP Resource Integration** - Proper resource listing and reading
+- ✅ **URI Patterns** - `dbt://project/{id}` and `dbt://projects` schema
+
+#### 2. ProjectManager (`src/fsc_dbt_mcp/project_manager.py`)
+- ✅ **Multi-project artifact loading** - Local and GitHub repository support
+- ✅ **Array-based project_id parameter** - Support up to 5 projects (configurable)
+- ✅ **Local caching system** - UTC timestamps in `target/{project_id}/` structure
+- ✅ **GitHub artifact fetching** - Raw URLs with aiohttp integration
+- ✅ **Smart project extraction** - Auto-detect project from `uniqueId` format
+- ✅ **Deployment mode support** - Local, desktop, remote configurations
+
+#### 3. Project-Aware Discovery Tools (All 3 tools updated)
+- ✅ **get_model_details** - Multi-project search with intelligent project detection
+- ✅ **get_description** - **Requires project_id** to prevent blockchain context mixing
+- ✅ **get_models** - Cross-project model listing with hierarchical organization
+- ✅ **Enhanced error handling** - All errors include available projects list
+- ✅ **DRY refactoring** - Shared utilities in `discovery/utils.py`
+
+#### 4. Configuration & Environment Support
+- ✅ **DEPLOYMENT_MODE** - Local vs desktop vs remote cache directory handling
+- ✅ **Required dependencies** - aiohttp now required for GitHub operations
+- ✅ **Updated documentation** - README and prompt descriptions reflect multi-project capabilities
+
+### ✅ Key Features Delivered
+
+#### **Multi-Project Intelligence**
+- **Smart project detection**: Automatically extracts project from `uniqueId` format
+- **Cross-project search**: Search models across Bitcoin, Ethereum, and multi-chain projects
+- **Context isolation**: `get_description` requires project specification to prevent blockchain context mixing
+- **Hierarchical results**: Project → Schema → Models organization
+
+#### **Enhanced Error Handling**
+- **Available projects list**: All error messages include available projects for guidance
+- **Null/undefined handling**: Graceful handling of missing `project_id` parameters
+- **Validation with context**: Rich error messages with troubleshooting guidance
+
+#### **Performance & Caching**
+- **Local artifact caching**: UTC timestamps with configurable TTL
+- **GitHub integration**: Async artifact fetching with error resilience
+- **Deployment awareness**: Automatic cache directory selection based on environment
+
+#### **Developer Experience**
+- **DRY utilities**: Shared error handling and validation functions
+- **Type safety**: Consistent `List[TextContent]` return types
+- **Comprehensive logging**: Debug information for troubleshooting
+
+### ✅ Architecture Achievements
+- **Backward compatibility**: All existing functionality preserved
+- **Resource-driven discovery**: MCP Resources provide project catalog
+- **Modular design**: Clean separation between resources, project management, and tools
+- **Scalable foundation**: Ready for additional blockchain projects and tool expansion
 - **Flexible configuration**: Support both local and remote project definitions
-- **Scalable architecture**: Easy extension from 3 to N projects
+- **DRY implementation**: Shared utilities eliminate code duplication
 
-### Implementation Plan
+### ✅ Ready for Production
 
-#### Step 1: Core MCP Resource - Available Projects
-Add discoverable resource listing all configured dbt projects:
+The multi-project system is **complete and battle-tested**. Key capabilities:
 
-```python
-@server.list_resources()
-async def list_resources() -> list[types.Resource]:
-    return [
-        types.Resource(
-            uri="dbt://projects",
-            name="Available dbt Projects",
-            description="List of all configured dbt projects with metadata",
-            mimeType="application/json"
-        )
-    ]
-```
+#### **Project Discovery**
+- MCP Resources provide discoverable project catalog at `dbt://projects`
+- Individual project details available at `dbt://project/{id}`
+- Support for local projects (bitcoin-models, kairos-models) and GitHub projects (ethereum-models)
 
-```python
-@server.read_resource()
-async def read_resource(uri: AnyUrl) -> str:
-    if str(uri) == "dbt://projects":
-        projects = get_available_projects()
-        return json.dumps({
-            "projects": [
-                {
-                    "id": "bitcoin-models",
-                    "name": "Bitcoin Models",
-                    "description": "dbt models for Bitcoin blockchain data",
-                    "location": "/Users/jackforgash/gh/fs/bitcoin-models",
-                    "aliases": ["bitcoin", "btc"]
-                },
-                {
-                    "id": "ethereum-models", 
-                    "name": "Ethereum Models",
-                    "description": "dbt models for Ethereum blockchain data",
-                    "location": "flipside-crypto/ethereum-models",
-                    "aliases": ["ethereum", "eth", "mainnet", "eth mainnet"]
-                },
-                {
-                    "id": "kairos-models",
-                    "name": "Kairos Models", 
-                    "description": "Flipside developed stats and metrics models across all blockchains",
-                    "location": "/Users/jackforgash/gh/fs/kairos-models",
-                    "aliases": ["kairos", "metrics"]
-                }
-            ]
-        }, indent=2)
-```
+#### **Tool Integration**
+- All discovery tools (`get_model_details`, `get_description`, `get_models`) support multi-project operations
+- Intelligent parameter handling: `project_id` can be string, array, or omitted
+- Context isolation prevents blockchain-specific documentation mixing
 
-Resource returns project metadata including:
-- Project ID, name, description, aliases
-- Local path or GitHub repository (as just "location" right now but may need better disambiguation)
-- Other metadata possible
+#### **Deployment Ready**
+- `DEPLOYMENT_MODE` environment variable handles Claude Desktop vs local development
+- Comprehensive error handling with guidance for users
+- Performance optimized with local caching and async GitHub operations
 
-#### Step 2: Enhanced Configuration Management
-Expand `ServerConfig` to handle multiple projects:
+Resource returns comprehensive project metadata including:
+- Project ID, name, description, blockchain type
+- Artifact locations (local paths or GitHub URLs)
+- Schema structure and feature documentation
+- Last updated timestamps and metadata
 
-```python
-class ServerConfig:
-    def __init__(self):
-        self.projects = self._load_project_configs()  # Dict[str, ProjectConfig]
-        # ... existing config ...
-    
-    def _load_project_configs(self) -> Dict[str, ProjectConfig]:
-        # Support primary project (backward compatibility)
-        # Load additional projects from DBT_PROJECTS_CONFIG JSON
-```
-
-#### Step 3: Project-Aware Tool Enhancement
-Modify existing tools to accept optional `project_id` parameter:
-
-```python
-inputSchema={
-    "properties": {
-        "model_name": {"type": "string", "description": "Name of the dbt model"},
-        "project_id": {
-            "type": "string", 
-            "description": "ID of dbt project (see 'dbt://projects' resource). If not specified, searches all projects.",
-            "enum": ["bitcoin-models", "ethereum-models", "core-models", "all"]
-        }
-    },
-    "required": ["model_name"]
-}
-```
-
-#### Step 4: Project Resolution Logic
-Add `ProjectManager` class for artifact resolution:
-
-```python
-class ProjectManager:
-    async def get_project_artifacts(self, project_id: str) -> Tuple[dict, dict]:
-        """Get manifest and catalog for specific project."""
-    
-    async def find_model_in_projects(self, model_name: str, project_id: Optional[str] = None):
-        """Find model across configured projects."""
-```
-Remote projects (where a github repository is hosted) should resolve the project path to the location of the 2 json artifacts. All projects host a branch `/docs` with the latest dbt documentation and thus an up to date catalog and manifest.  
- - Example URL: `https://raw.githubusercontent.com/FlipsideCrypto/bitcoin-models/refs/heads/docs/docs/catalog.json`  
-If a project is defined in resources to be a github repository, it can be assumed the json files are on `/docs` IN the directory `/docs` (note - NOT TARGET)
-
-May need to add a project routing or selection step / tool to assess the project(s) involved in the query. NOTE - projectS as a user may be asking for comparative analytics.  
-
-
-#### Step 5: Migration Path
-- **Phase 1**: Add resource support, updating existing tools
-- **Phase 2**: Add optional `project_id` parameter
-- **Phase 3**: Enhanced project discovery and search capabilities with resource utilization
-- **Phase 4**: Optimization and caching for multi-project scenarios (TBD on caching)
-
-### Success Criteria for 2A
-1. MCP resource successfully lists 3 configured projects
-2. All existing tools work without modification (backward compatibility)
-3. Tools accept optional `project_id` and search across projects when unspecified
-4. LLM can discover available projects via resource before tool usage
-5. Configuration supports both local paths and GitHub repository definitions
-
-## 🔮 FUTURE ROADMAP
-
-### Phase 3: Enhanced Discovery Tools
+### Current State: **PLANNING** 📋
+Phase 2A multi-project foundation enables advanced discovery capabilities across blockchain ecosystems.
 
 #### New Tool: `generate_expert_context`
-- **Purpose**: Return prompt context for "blockchain experts"
-- **Status**: Concept phase - definition needed
-- **Implementation**: TBD
+- **Purpose**: Generate specialized blockchain expert context from project documentation
+- **Status**: Ready for implementation
+- **Foundation**: Leverages multi-project `get_description` with `__MCP__` blocks
+- **Use case**: Create domain-specific expert personas for Bitcoin, Ethereum, DeFi analysis
+
+#### **PRIORITY: Multi-Project dbt CLI Tools** 🚨
+**Current Issue**: dbt CLI tools (`dbt_list`, `dbt_compile`, `dbt_show`) only work with single project via `DBT_PROJECT_DIR`
+
+**Required Updates:**
+- Add `project_id` parameter to all dbt CLI tools
+- Update dbt CLI handlers to switch working directory based on project
+- Modify subprocess calls to operate in correct project context
+- Ensure compatibility with both local and GitHub projects (GitHub projects need local clone/checkout)
+- Update tool schemas and documentation
+
+**Impact**: Currently dbt CLI tools are not project-aware and will fail or return incorrect results when used in multi-project context.
 
 #### Additional Discovery Tools (from original roadmap)
 | Tool Name             | Status | Description                                                     |
 | --------------------- | ------ | --------------------------------------------------------------- |
-| get_gold_models       | 📋 TODO | Gets all gold models                                            |
-| get_all_models        | 📋 TODO | Gets all models                                                 |
+| get_gold_models       | ✅ DONE | Gets all gold models                                            |
+| get_all_models        | ✅ DONE | Gets all models                                                 |
 | get_model_parents     | 📋 TODO | Gets parent nodes of a specific model                           |
 | get_model_children    | 📋 TODO | Gets children modes of a specific model                         |
 | search_by_object_name | 📋 TODO | Find nodes (models, sources, tests, etc.) by name               |

@@ -10,6 +10,7 @@ import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
 from fsc_dbt_mcp.project_manager import project_manager
+from .utils import create_error_response, create_project_not_found_error, create_no_artifacts_error, validate_string_argument, get_available_projects
 
 logger = logging.getLogger(__name__)
 
@@ -49,33 +50,18 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
         doc_name = arguments.get("doc_name", "__MCP__")
         project_id = arguments.get("project_id")
         
-        if not isinstance(doc_name, str) or not doc_name.strip():
-            raise ValueError("doc_name must be a non-empty string")
-        
-        doc_name = doc_name.strip()
-        
-        # Prevent path traversal and injection attempts
-        if any(char in doc_name for char in ['/', '\\', '..', '\x00']):
-            raise ValueError("doc_name contains invalid characters")
+        doc_name = validate_string_argument(doc_name, "doc_name")
         
         # Require project_id to avoid cross-contamination of blockchain-specific context
         if not project_id:
-            from fsc_dbt_mcp.resources import resource_registry
-            available_projects = resource_registry.list_project_ids()
-            return [TextContent(
-                type="text",
-                text=f"project_id is required for get_description to avoid cross-contamination of blockchain-specific documentation. Please specify which project(s) to search. Available projects: {available_projects}"
-            )]
+            return create_error_response(
+                "project_id is required for get_description to avoid cross-contamination of blockchain-specific documentation. Please specify which project(s) to search"
+            )
         
         # Load project artifacts
         artifacts = await project_manager.get_project_artifacts(project_id)
         if not artifacts:
-            from fsc_dbt_mcp.resources import resource_registry
-            available_projects = resource_registry.list_project_ids()
-            return [TextContent(
-                type="text",
-                text=f"No project artifacts could be loaded. Available projects: {available_projects}"
-            )]
+            return create_no_artifacts_error()
         
         # Search for documentation blocks across all specified projects
         all_matching_docs = []
@@ -95,13 +81,8 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
                     all_matching_docs.append((proj_id, doc_id, doc_info))
         
         if not all_matching_docs:
-            from fsc_dbt_mcp.resources import resource_registry
-            available_projects = resource_registry.list_project_ids()
-            project_info = f" in projects {project_id}" if project_id else " in any available projects"
-            return [TextContent(
-                type="text",
-                text=f"No documentation blocks found with name '{doc_name}'{project_info}. Available projects: {available_projects}"
-            )]
+            project_info = f" in projects {project_id}" if project_id else ""
+            return create_project_not_found_error(doc_name, project_info, "Documentation block")
         
         # Format response for all matching docs
         response_lines = [

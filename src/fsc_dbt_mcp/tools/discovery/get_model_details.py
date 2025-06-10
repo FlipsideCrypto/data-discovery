@@ -11,6 +11,7 @@ import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
 from fsc_dbt_mcp.project_manager import project_manager
+from .utils import create_error_response, create_project_not_found_error, create_no_artifacts_error, validate_string_argument
 
 logger = logging.getLogger(__name__)
 
@@ -59,22 +60,14 @@ def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str],
     
     # Input sanitization
     if unique_id is not None:
-        if not isinstance(unique_id, str) or not unique_id.strip():
-            raise ValueError("uniqueId must be a non-empty string")
-        unique_id = unique_id.strip()
+        unique_id = validate_string_argument(unique_id, "uniqueId")
         
         # Basic format validation for unique_id
         if not unique_id.startswith("model."):
             raise ValueError("uniqueId must start with 'model.'")
     
     if model_name is not None:
-        if not isinstance(model_name, str) or not model_name.strip():
-            raise ValueError("model_name must be a non-empty string")
-        model_name = model_name.strip()
-        
-        # Prevent path traversal and injection attempts
-        if any(char in model_name for char in ['/', '\\', '..', '\x00']):
-            raise ValueError("model_name contains invalid characters")
+        model_name = validate_string_argument(model_name, "model_name")
     
     if not unique_id and not model_name:
         raise ValueError("Either uniqueId or model_name must be provided")
@@ -333,12 +326,7 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
                         return await _format_model_details_response(model_node, found_unique_id, catalog, extracted_project)
                     else:
                         # Model not found in the expected project
-                        from fsc_dbt_mcp.resources import resource_registry
-                        available_projects = resource_registry.list_project_ids()
-                        return [TextContent(
-                            type="text",
-                            text=f"Model '{unique_id}' not found in project '{extracted_project}'. Available projects: {available_projects}"
-                        )]
+                        return create_project_not_found_error(unique_id, f" in project '{extracted_project}'", "Model")
             except ValueError as e:
                 # Project validation failed - return the helpful error message
                 return [TextContent(
@@ -351,14 +339,9 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
             found_models = await project_manager.find_model_in_projects(model_name, project_id)
             
             if not found_models:
-                from fsc_dbt_mcp.resources import resource_registry
-                available_projects = resource_registry.list_project_ids()
                 identifier = unique_id if unique_id else model_name
-                project_info = f" in projects {project_id}" if project_id else " in any available projects"
-                return [TextContent(
-                    type="text",
-                    text=f"Model '{identifier}' not found{project_info}. Available projects: {available_projects}"
-                )]
+                project_info = f" in projects {project_id}" if project_id else ""
+                return create_project_not_found_error(identifier, project_info, "Model")
             
             if len(found_models) == 1:
                 # Single model found
@@ -390,12 +373,7 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
         # Fallback: load artifacts and try single-project search
         artifacts = await project_manager.get_project_artifacts(project_id or [])
         if not artifacts:
-            from fsc_dbt_mcp.resources import resource_registry
-            available_projects = resource_registry.list_project_ids()
-            return [TextContent(
-                type="text",
-                text=f"No project artifacts could be loaded. Available projects: {available_projects}"
-            )]
+            return create_no_artifacts_error()
         
         # Search in available projects
         for proj_id, (manifest, catalog) in artifacts.items():
@@ -404,13 +382,8 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
                 return await _format_model_details_response(model_node, found_unique_id, catalog, proj_id)
         
         # Model not found in any project
-        from fsc_dbt_mcp.resources import resource_registry
-        available_projects = resource_registry.list_project_ids()
         identifier = unique_id if unique_id else model_name
-        return [TextContent(
-            type="text",
-            text=f"Model '{identifier}' not found in any available projects. Available projects: {available_projects}"
-        )]
+        return create_project_not_found_error(identifier, "", "Model")
         
     except FileNotFoundError as e:
         logger.error(f"File not found in get_model_details: {e}")

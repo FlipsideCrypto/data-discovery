@@ -8,6 +8,7 @@ import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
 from fsc_dbt_mcp.project_manager import project_manager
+from .utils import create_error_response, create_project_not_found_error, create_no_artifacts_error, validate_string_argument, get_available_projects
 
 logger = logging.getLogger(__name__)
 
@@ -62,19 +63,15 @@ def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str]
     
     # Validate schema
     if schema is not None:
-        if not isinstance(schema, str) or not schema.strip():
-            raise ValueError("schema must be a non-empty string")
-        schema = schema.strip().lower()
+        schema = validate_string_argument(schema, "schema").lower()
         
-        # Prevent path traversal and injection attempts
-        if any(char in schema for char in ['/', '\\', '..', '\x00', ';', '--']):
+        # Additional validation for schema (prevent SQL injection attempts)
+        if any(char in schema for char in [';', '--']):
             raise ValueError("schema contains invalid characters")
     
     # Validate level
     if level is not None:
-        if not isinstance(level, str) or not level.strip():
-            raise ValueError("level must be a non-empty string")
-        level = level.strip().lower()
+        level = validate_string_argument(level, "level").lower()
         
         if level not in ['bronze', 'silver', 'gold']:
             raise ValueError("level must be one of: bronze, silver, gold")
@@ -145,12 +142,7 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
         # Load project artifacts
         artifacts = await project_manager.get_project_artifacts(project_id or [])
         if not artifacts:
-            from fsc_dbt_mcp.resources import resource_registry
-            available_projects = resource_registry.list_project_ids()
-            return [TextContent(
-                type="text",
-                text=f"No project artifacts could be loaded. Available projects: {available_projects}"
-            )]
+            return create_no_artifacts_error()
         
         # Collect all filtered models across projects
         all_filtered_models = []
@@ -187,8 +179,7 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
         ]
         
         if not all_filtered_models:
-            from fsc_dbt_mcp.resources import resource_registry
-            available_projects = resource_registry.list_project_ids()
+            available_projects = get_available_projects()
             response_lines.append(f"No models found matching the specified criteria. Available projects: {available_projects}")
             return [TextContent(type="text", text="\n".join(response_lines))]
         
