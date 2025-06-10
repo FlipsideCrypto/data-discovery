@@ -8,7 +8,6 @@ their metadata, dependencies, and associated documentation.
 from .get_model_details import get_model_details_tool, handle_get_model_details
 from .get_description import get_description_tool, handle_get_description
 from .get_models import get_models_tool, handle_get_models
-from .utils import load_dbt_artifacts
 
 __all__ = [
     "get_model_details_tool",
@@ -16,6 +15,5 @@ __all__ = [
     "get_description_tool",
     "handle_get_description",
     "get_models_tool",
-    "handle_get_models",
-    "load_dbt_artifacts"
+    "handle_get_models"
 ]

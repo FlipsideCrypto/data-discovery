@@ -7,15 +7,17 @@ and custom discovery tools for dbt projects.
 """
 
 import asyncio
+import json
 import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
+from pydantic import AnyUrl
 
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
-from mcp import stdio_server
+from mcp import stdio_server, types
 from mcp.types import TextContent
 
 # Add the src directory to the Python path for absolute imports
@@ -26,6 +28,7 @@ if str(src_dir) not in sys.path:
 
 from fsc_dbt_mcp.tools.discovery import get_model_details_tool, handle_get_model_details, get_description_tool, handle_get_description, get_models_tool, handle_get_models
 from fsc_dbt_mcp.tools.dbt_cli import get_dbt_cli_tools, handle_dbt_cli_tool, is_dbt_cli_tool
+from fsc_dbt_mcp.resources import resource_registry
 
 # Configure logging
 logging.basicConfig(
@@ -39,16 +42,11 @@ class ServerConfig:
     """Server configuration management following MCP best practices."""
     
     def __init__(self):
-        self.project_dir = os.getenv('DBT_PROJECT_DIR', os.getcwd())
         self.debug_mode = os.getenv('DEBUG', 'false').lower() == 'true'
         self.max_file_size = int(os.getenv('MAX_FILE_SIZE', '10485760'))  # 10MB
         
     def validate(self):
         """Validate configuration settings."""
-        project_path = Path(self.project_dir)
-        if not project_path.exists():
-            logger.warning(f"DBT project directory does not exist: {self.project_dir}")
-        
         if self.debug_mode:
             logger.setLevel(logging.DEBUG)
 
@@ -59,6 +57,31 @@ def create_server() -> Server:
     config.validate()
     
     server = Server("fsc-dbt-mcp")
+    
+    @server.list_resources()
+    async def list_resources() -> List[types.Resource]:
+        """List available MCP resources for dbt projects."""
+        try:
+            resources = resource_registry.list_all_resources()
+            logger.info(f"Listed {len(resources)} MCP resources")
+            return resources
+        except Exception as e:
+            logger.error(f"Error listing resources: {e}")
+            raise RuntimeError(f"Failed to list resources: {str(e)}")
+    
+    @server.read_resource()
+    async def read_resource(uri: AnyUrl) -> str:
+        """Read MCP resource content for dbt projects."""
+        try:
+            uri_str = str(uri)
+            logger.info(f"Reading resource: {uri_str}")
+            
+            content = resource_registry.get_resource_content(uri_str)
+            return content
+                
+        except Exception as e:
+            logger.error(f"Error reading resource '{uri}': {e}")
+            raise RuntimeError(f"Failed to read resource: {str(e)}")
     
     @server.list_tools()
     async def list_tools():

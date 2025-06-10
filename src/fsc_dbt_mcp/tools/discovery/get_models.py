@@ -1,12 +1,13 @@
 """
 get_models tool for retrieving dbt models with filtering by schema or medallion level.
+Supports multi-project operations with project-aware functionality.
 """
 from typing import Dict, Any, List, Optional
 from mcp.types import Tool, TextContent
 import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
-from .utils import load_dbt_artifacts
+from fsc_dbt_mcp.project_manager import project_manager
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,14 @@ def get_models_tool() -> Tool:
                     "description": "Filter models by medallion level (bronze, silver, gold). Ignored if schema is provided.",
                     "enum": ["bronze", "silver", "gold"]
                 },
+                "project_id": {
+                    "type": ["string", "array"],
+                    "description": "Project ID(s) to search in. Can be a single project ID string or array of project IDs (max 5). If not provided, searches all available projects.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "maxItems": 5
+                },
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of models to return (default: 10, max: 200)",
@@ -41,13 +50,14 @@ def get_models_tool() -> Tool:
     )
 
 
-def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str], Optional[str], int]:
+def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[Any], int]:
     """Validate and extract model filtering arguments."""
     if not isinstance(arguments, dict):
         raise ValueError("Arguments must be a dictionary")
     
     schema = arguments.get("schema")
     level = arguments.get("level") 
+    project_id = arguments.get("project_id")
     limit = arguments.get("limit", 10)
     
     # Validate schema
@@ -77,10 +87,10 @@ def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str]
     if not schema and not level:
         schema = "core"
     
-    return schema, level, limit
+    return schema, level, project_id, limit
 
 
-def _filter_models_by_criteria(models: Dict[str, Any], schema: Optional[str], level: Optional[str]) -> List[Dict[str, Any]]:
+def _filter_models_by_criteria(models: Dict[str, Any], schema: Optional[str], level: Optional[str], project_id: str) -> List[Dict[str, Any]]:
     """Filter models based on schema or medallion level criteria."""
     filtered_models = []
     
@@ -117,7 +127,8 @@ def _filter_models_by_criteria(models: Dict[str, Any], schema: Optional[str], le
                 "tags": model_info.get("tags", []),
                 "path": model_info.get("original_file_path"),
                 "fqn": model_info.get("fqn", []),
-                "relation_name": model_info.get("relation_name")
+                "relation_name": model_info.get("relation_name"),
+                "project_id": project_id
             }
             filtered_models.append(model_data)
     
@@ -129,73 +140,109 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
     """Handle the get_models tool invocation."""
     try:
         # Validate input arguments
-        schema, level, limit = _validate_models_arguments(arguments)
+        schema, level, project_id, limit = _validate_models_arguments(arguments)
         
-        # Load manifest artifact
-        manifest, _ = load_dbt_artifacts()
+        # Load project artifacts
+        artifacts = await project_manager.get_project_artifacts(project_id or [])
+        if not artifacts:
+            from fsc_dbt_mcp.resources import resource_registry
+            available_projects = resource_registry.list_project_ids()
+            return [TextContent(
+                type="text",
+                text=f"No project artifacts could be loaded. Available projects: {available_projects}"
+            )]
         
-        # Get all models from manifest
-        nodes = manifest.get("nodes", {})
-        if not isinstance(nodes, dict):
-            raise ValueError("Invalid manifest structure: 'nodes' is not a dictionary")
+        # Collect all filtered models across projects
+        all_filtered_models = []
         
-        # Filter models based on criteria
-        filtered_models = _filter_models_by_criteria(nodes, schema, level)
+        for proj_id, (manifest, _) in artifacts.items():
+            # Get all models from manifest
+            nodes = manifest.get("nodes", {})
+            if not isinstance(nodes, dict):
+                logger.warning(f"Invalid manifest structure in project {proj_id}: 'nodes' is not a dictionary")
+                continue
+            
+            # Filter models based on criteria for this project
+            project_models = _filter_models_by_criteria(nodes, schema, level, proj_id)
+            all_filtered_models.extend(project_models)
+        
+        # Sort all models by project, schema, then name
+        all_filtered_models = sorted(all_filtered_models, key=lambda x: (x.get("project_id", ""), x.get("schema", ""), x.get("name", "")))
         
         # Apply limit
-        if len(filtered_models) > limit:
-            filtered_models = filtered_models[:limit]
+        if len(all_filtered_models) > limit:
+            all_filtered_models = all_filtered_models[:limit]
             truncated = True
         else:
             truncated = False
         
         # Format response
         filter_desc = f"schema '{schema}'" if schema else f"level '{level}'"
+        project_info = f" in projects {project_id}" if project_id else " across all projects"
+        
         response_lines = [
-            f"# Models ({filter_desc})",
-            f"**Found:** {len(filtered_models)} models" + (" (truncated)" if truncated else ""),
+            f"# Models ({filter_desc}){project_info}",
+            f"**Found:** {len(all_filtered_models)} models" + (" (truncated)" if truncated else ""),
             ""
         ]
         
-        if not filtered_models:
-            response_lines.append("No models found matching the specified criteria.")
+        if not all_filtered_models:
+            from fsc_dbt_mcp.resources import resource_registry
+            available_projects = resource_registry.list_project_ids()
+            response_lines.append(f"No models found matching the specified criteria. Available projects: {available_projects}")
             return [TextContent(type="text", text="\n".join(response_lines))]
         
-        # Group by schema for better organization
-        models_by_schema = {}
-        for model in filtered_models:
+        # Group by project first, then by schema for better organization
+        models_by_project = {}
+        for model in all_filtered_models:
+            model_project = model.get("project_id", "unknown")
+            if model_project not in models_by_project:
+                models_by_project[model_project] = {}
+            
             model_schema = model.get("schema", "unknown")
-            if model_schema not in models_by_schema:
-                models_by_schema[model_schema] = []
-            models_by_schema[model_schema].append(model)
+            if model_schema not in models_by_project[model_project]:
+                models_by_project[model_project][model_schema] = []
+            models_by_project[model_project][model_schema].append(model)
         
-        # Output models grouped by schema
-        for schema_name in sorted(models_by_schema.keys()):
-            schema_models = models_by_schema[schema_name]
+        # Output models grouped by project and schema
+        for project_name in sorted(models_by_project.keys()):
+            project_schemas = models_by_project[project_name]
+            total_project_models = sum(len(models) for models in project_schemas.values())
+            
             response_lines.extend([
-                f"## Schema: {schema_name}",
-                f"**Models:** {len(schema_models)}",
+                f"## Project: {project_name}",
+                f"**Total Models:** {total_project_models}",
                 ""
             ])
             
-            for model in schema_models:
-                response_lines.append(f"### {model['name']}")
-                response_lines.append(f"**Unique ID:** {model['unique_id']}")
-                response_lines.append(f"**Database:** {model.get('database', 'N/A')}")
-                response_lines.append(f"**Materialized:** {model.get('materialized', 'N/A')}")
-                response_lines.append(f"**Path:** {model.get('path', 'N/A')}")
+            for schema_name in sorted(project_schemas.keys()):
+                schema_models = project_schemas[schema_name]
+                response_lines.extend([
+                    f"### Schema: {schema_name}",
+                    f"**Models:** {len(schema_models)}",
+                    ""
+                ])
                 
-                if model.get("description"):
-                    response_lines.append(f"**Description:** {model['description']}")
-                
-                if model.get("tags"):
-                    response_lines.append(f"**Tags:** {', '.join(model['tags'])}")
-                
-                response_lines.append("")
+                for model in schema_models:
+                    response_lines.append(f"#### {model['name']}")
+                    response_lines.append(f"**Unique ID:** {model['unique_id']}")
+                    response_lines.append(f"**Database:** {model.get('database', 'N/A')}")
+                    response_lines.append(f"**Materialized:** {model.get('materialized', 'N/A')}")
+                    response_lines.append(f"**Path:** {model.get('path', 'N/A')}")
+                    
+                    if model.get("description"):
+                        response_lines.append(f"**Description:** {model['description']}")
+                    
+                    if model.get("tags"):
+                        response_lines.append(f"**Tags:** {', '.join(model['tags'])}")
+                    
+                    response_lines.append("")
+            
+            response_lines.append("---")
+            response_lines.append("")
         
         if truncated:
             response_lines.extend([
-                "---",
                 f"**Note:** Results limited to {limit} models. Use a higher limit or more specific filters to see more results."
             ])
         

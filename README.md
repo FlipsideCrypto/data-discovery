@@ -34,21 +34,33 @@ Set these environment variables for proper operation:
 - `DBT_PATH` - Full path to dbt executable (recommended for pyenv users)
 - `DEBUG` - Enable debug logging (`true`/`false`)
 - `MAX_FILE_SIZE` - Maximum file size for JSON artifacts (default: 10MB)
+- `DEPLOYMENT_MODE` - Deployment mode (`local`, `desktop`, `remote`) - affects cache directory location
+- `CACHE_DIR` - Custom cache directory path (overrides deployment mode defaults)
 
 ### Common Setup Examples
 
 **Standard installation:**
 ```bash
 export DBT_PROJECT_DIR=/path/to/your/dbt/project
+export DEPLOYMENT_MODE=local
 ```
 
 **pyenv users (recommended):**
 ```bash
 export DBT_PROJECT_DIR=/path/to/your/dbt/project
 export DBT_PATH=/Users/username/.pyenv/versions/3.12.11/bin/dbt
+export DEPLOYMENT_MODE=local
 ```
 
 > **Note**: Setting `DBT_PATH` is especially important for pyenv users, as older dbt versions may not support all CLI flags (like `--log-format`) used by this server.
+
+### Deployment Modes
+
+The `DEPLOYMENT_MODE` environment variable controls how the server handles file paths and cache directories:
+
+- **`local`** (default): Uses relative `target/` directory for cache. Best for local development and MCP Inspector testing.
+- **`desktop`**: Uses `~/.cache/fsc-dbt-mcp/` for cache. **Required for Claude Desktop** to avoid read-only file system errors.
+- **`remote`**: Uses `~/.cache/fsc-dbt-mcp/` for cache. For containerized or remote deployments.
 
 ### dbt Profiles
 
@@ -68,7 +80,8 @@ The server looks for dbt profiles in:
          "args": ["/path/to/your/fsc-dbt-mcp/src/fsc_dbt_mcp/server.py"],
          "env": {
            "DBT_PROJECT_DIR": "/path/to/your/dbt/project",
-           "DBT_PATH": "/path/to/dbt/executable"
+           "DBT_PATH": "/path/to/dbt/executable",
+           "DEPLOYMENT_MODE": "desktop"
          }
        }
      }
