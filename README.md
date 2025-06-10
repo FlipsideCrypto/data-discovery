@@ -1,4 +1,4 @@
-# FSC dbt MCP Server
+# FSC dbt-MCP Server dba `data-discovery`
 
 A lightweight Model Context Protocol (MCP) server that provides both dbt Core CLI functionality and custom discovery tools for dbt projects. This server integrates with local dbt projects and provides a Claude Desktop-compatible MCP interface.
 

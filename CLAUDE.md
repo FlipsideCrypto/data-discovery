@@ -168,6 +168,7 @@ dependencies = [
 ### Security Considerations for Remote Access
 - GitHub token secure storage and rotation
 - Repository access validation
+- Strict input validation against JSON Schemas for all tool and API inputs
 - Artifact content validation (prevent malicious JSON)
 - Rate limiting and respectful API usage
 - Audit logging for artifact access

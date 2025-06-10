@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "fsc-dbt-mcp": {
+    "data-discovery": {
       "command": "python",
       "args": [
         "/Users/jackforgash/gh/tools/local/fsc-dbt-mcp/src/fsc_dbt_mcp/server.py"
