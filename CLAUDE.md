@@ -3,7 +3,8 @@
 ## Project Overview
 Build a lightweight, custom Model Context Protocol (MCP) server that integrates with dbt projects to define custom tools for data discovery. This MCP server reads dbt JSON artifacts `catalog.json` and `manifest.json` to return model details, lineage, metadata, and more to a LLM client. 
 
-**Current State**: ✅ **PRODUCTION READY** - Complete multi-project blockchain ecosystem with 26 FlipsideCrypto dbt projects, robust error handling, intelligent caching, and comprehensive discovery tools.
+**Current State**: **DEBUGGING** - Suite of get_ tools created. Common bug occurs when the LLM passes `null` as resource_id. Fix before moving on to adding `generate_expert` and `lineage` tools.
+ - `dbt_cli` tools have NOT been migrated for multi-project and are presently disabled.
 
 ## ✅ COMPLETED PHASE 1: Local dbt Project Support
 
@@ -144,9 +145,8 @@ Multi-project support has been successfully implemented and tested. All discover
 - **Flexible configuration**: Support both local and remote project definitions
 - **DRY implementation**: Shared utilities eliminate code duplication
 
-### ✅ Ready for Production
 
-The multi-project system is **complete and battle-tested**. Key capabilities:
+The multi-project system is **complete**. Key capabilities:
 
 #### **Project Discovery**
 - MCP Resources provide discoverable project catalog at `dbt://projects`

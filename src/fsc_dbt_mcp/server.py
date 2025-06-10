@@ -96,8 +96,11 @@ def create_server() -> Server:
             tools.append(get_resources_tool())
             
             # Add dbt CLI tools
-            dbt_tools = get_dbt_cli_tools()
-            tools.extend(dbt_tools)
+            # dbt_tools = get_dbt_cli_tools()
+            # tools.extend(dbt_tools)
+
+            # disable dbt tools for now as they have not been migrated to multi-project
+            dbt_tools = []
             
             logger.info(f"Listed {len(tools)} total tools ({len(dbt_tools)} dbt CLI tools)")
             return tools
