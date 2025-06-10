@@ -48,7 +48,7 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
     """Handle the get_description tool invocation."""
     try:
         # Extract arguments
-        doc_name = arguments.get("doc_name", "__MCP__")
+        doc_name = arguments.get("doc_name", "__overview__")
         resource_id = normalize_null_to_none(arguments.get("resource_id"))
         
         doc_name = validate_string_argument(doc_name, "doc_name")

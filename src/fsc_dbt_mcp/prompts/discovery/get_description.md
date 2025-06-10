@@ -1,4 +1,4 @@
-Retrieves documentation blocks from dbt manifests by name (e.g., __MCP__ blocks) to provide domain expertise and guidelines. **Supports multi-resource operations** - can search across multiple blockchain data resources to find comprehensive documentation.
+Retrieves documentation blocks from dbt manifests by name (e.g., __overview____ blocks) to provide domain expertise and guidelines. **Supports multi-resource operations** - can search across multiple blockchain data resources to find comprehensive documentation.
 
 The DEFAULT and primary documentation block is `__overview____` as this often contains descriptive information about the dbt project. This is not comprehensive and should not be relied on as the sole source of information for a project.  
 
@@ -22,8 +22,9 @@ IF EXISTS, a documentation block `__MCP__` contains **expert information** about
 - **Lightweight queries**: Get just documentation content when you don't need full model metadata
 
 **Usage Examples:**
-1. **Get expert context for specific resource**: `get_description(doc_name="__MCP__", resource_id="bitcoin-models")`
-2. **Find documentation in multiple blockchain resources**: `get_description(doc_name="trading_metrics", resource_id=["ethereum-models", "bitcoin-models"])`
-3. **Resource-specific documentation**: `get_description(doc_name="defi_concepts", resource_id="ethereum-models")`
+1. **Get high-level project information**: `get_description(doc_name="__overview__", resource_id="ethereum-models")`
+2. **Get expert context for specific resource**: `get_description(doc_name="__MCP__", resource_id="bitcoin-models")`
+3. **Find documentation in multiple blockchain resources**: `get_description(doc_name="trading_metrics", resource_id=["ethereum-models", "bitcoin-models"])`
+4. **Resource-specific documentation**: `get_description(doc_name="defi_concepts", resource_id="ethereum-models")`
 
 **Important:** `resource_id` is required to prevent mixing blockchain-specific context that could confuse analysis.
