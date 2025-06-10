@@ -1,6 +1,6 @@
-Retrieves information about a specific dbt model, including compiled SQL, description, and column details.  
-  
-IMPORTANT: Use uniqueId when available.
+get_model_details provides structured metadata (Type, Description, Comment) about a specific dbt model, returning the column documentation PLUS type information, model structure, dependencies, and compiled SQL.  
+
+IMPORTANT: Use uniqueId when available.  
  - Using uniqueId guarantees the correct model is retrieved  
  - Using only model_name may return incorrect results or fail entirely  
  - If you obtained models via get_all_models(), you should always use the uniqueId from those results  
