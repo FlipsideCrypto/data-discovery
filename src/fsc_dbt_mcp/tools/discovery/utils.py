@@ -1,13 +1,15 @@
 """
 Shared utilities for discovery tools.
 
-Provides common functions for loading and validating dbt artifacts.
+Provides common functions for loading and validating dbt artifacts,
+error message generation, and multi-project operations.
 """
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List, Optional
 import logging
+from mcp.types import TextContent
 
 logger = logging.getLogger(__name__)
 
@@ -99,3 +101,51 @@ def load_dbt_artifacts() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error loading dbt artifacts: {e}")
         raise
+
+
+def get_available_projects() -> List[str]:
+    """Get list of available project IDs from resource registry."""
+    from fsc_dbt_mcp.resources import resource_registry
+    return resource_registry.list_project_ids()
+
+
+def create_error_response(message: str, include_available_projects: bool = True) -> List[TextContent]:
+    """Create a standardized error response with optional available projects list."""
+    if include_available_projects:
+        available_projects = get_available_projects()
+        full_message = f"{message}. Available projects: {available_projects}"
+    else:
+        full_message = message
+    
+    return [TextContent(type="text", text=full_message)]
+
+
+def create_project_not_found_error(identifier: str, project_info: str = "", 
+                                  item_type: str = "item") -> List[TextContent]:
+    """Create a standardized 'not found' error with available projects."""
+    available_projects = get_available_projects()
+    project_suffix = project_info if project_info else " in any available projects"
+    message = f"{item_type.title()} '{identifier}' not found{project_suffix}. Available projects: {available_projects}"
+    return [TextContent(type="text", text=message)]
+
+
+def create_no_artifacts_error() -> List[TextContent]:
+    """Create a standardized 'no artifacts loaded' error with available projects."""
+    return create_error_response("No project artifacts could be loaded")
+
+
+def validate_string_argument(value: Any, arg_name: str, allow_empty: bool = False) -> str:
+    """Validate and sanitize string arguments with common security checks."""
+    if not isinstance(value, str):
+        raise ValueError(f"{arg_name} must be a string")
+    
+    if not allow_empty and not value.strip():
+        raise ValueError(f"{arg_name} must be a non-empty string")
+    
+    value = value.strip()
+    
+    # Prevent path traversal and injection attempts
+    if any(char in value for char in ['/', '\\', '..', '\x00']):
+        raise ValueError(f"{arg_name} contains invalid characters")
+    
+    return value

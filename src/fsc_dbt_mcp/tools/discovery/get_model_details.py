@@ -2,6 +2,7 @@
 get_model_details tool for dbt model exploration and metadata retrieval.
 
 Follows MCP best practices for input validation, error handling, and security.
+Supports multi-project operations with project-aware functionality.
 """
 import json
 from typing import Dict, Any, Optional, Tuple
@@ -9,7 +10,8 @@ from mcp.types import Tool, TextContent
 import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
-from .utils import load_dbt_artifacts
+from fsc_dbt_mcp.project_manager import project_manager
+from .utils import create_error_response, create_project_not_found_error, create_no_artifacts_error, validate_string_argument
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,14 @@ def get_model_details_tool() -> Tool:
                 "model_name": {
                     "type": "string", 
                     "description": "The name of the dbt model. Only use when uniqueId is unavailable."
+                },
+                "project_id": {
+                    "type": ["string", "array"],
+                    "description": "Project ID(s) to search in. Can be a single project ID string or array of project IDs (max 5). If not provided, searches all available projects.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "maxItems": 5
                 }
             },
             "oneOf": [
@@ -39,37 +49,30 @@ def get_model_details_tool() -> Tool:
     )
 
 
-def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[Any]]:
     """Validate and extract model identification arguments."""
     if not isinstance(arguments, dict):
         raise ValueError("Arguments must be a dictionary")
     
     unique_id = arguments.get("uniqueId")
     model_name = arguments.get("model_name")
+    project_id = arguments.get("project_id")
     
     # Input sanitization
     if unique_id is not None:
-        if not isinstance(unique_id, str) or not unique_id.strip():
-            raise ValueError("uniqueId must be a non-empty string")
-        unique_id = unique_id.strip()
+        unique_id = validate_string_argument(unique_id, "uniqueId")
         
         # Basic format validation for unique_id
         if not unique_id.startswith("model."):
             raise ValueError("uniqueId must start with 'model.'")
     
     if model_name is not None:
-        if not isinstance(model_name, str) or not model_name.strip():
-            raise ValueError("model_name must be a non-empty string")
-        model_name = model_name.strip()
-        
-        # Prevent path traversal and injection attempts
-        if any(char in model_name for char in ['/', '\\', '..', '\x00']):
-            raise ValueError("model_name contains invalid characters")
+        model_name = validate_string_argument(model_name, "model_name")
     
     if not unique_id and not model_name:
         raise ValueError("Either uniqueId or model_name must be provided")
     
-    return unique_id, model_name
+    return unique_id, model_name, project_id
 
 
 def _find_model_node(manifest: Dict[str, Any], unique_id: Optional[str], 
@@ -98,27 +101,10 @@ def _find_model_node(manifest: Dict[str, Any], unique_id: Optional[str],
     return None, None
 
 
-async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextContent]:
-    """Handle the get_model_details tool invocation with comprehensive validation."""
+async def _format_model_details_response(model_node: Dict[str, Any], unique_id: str, 
+                                        catalog: Dict[str, Any], project_id: str) -> list[TextContent]:
+    """Format model details into a comprehensive response."""
     try:
-        # Validate input arguments
-        unique_id, model_name = _validate_model_arguments(arguments)
-        
-        # Load artifacts
-        manifest, catalog = load_dbt_artifacts()
-        
-        # Find the model
-        model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name)
-        
-        if not model_node or not found_unique_id:
-            identifier = unique_id if unique_id else model_name
-            return [TextContent(
-                type="text",
-                text=f"Model '{identifier}' not found in manifest"
-            )]
-        
-        unique_id = found_unique_id
-        
         # Get catalog information if available
         catalog_node = catalog.get("nodes", {}).get(unique_id, {})
         
@@ -144,6 +130,7 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
             "constraints": model_node.get("constraints", []),
             "version": model_node.get("version"),
             "latest_version": model_node.get("latest_version"),
+            "project_id": project_id,
         }
         
         # Add column information from manifest
@@ -192,6 +179,7 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
         # Format the response
         response_lines = [
             f"# Model Details: {model_details['name']}",
+            f"**Project:** {model_details['project_id']}",
             f"**Unique ID:** {model_details['unique_id']}",
             f"**Database:** {model_details['database']}",
             f"**Schema:** {model_details['schema']}",
@@ -305,6 +293,97 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
             ])
         
         return [TextContent(type="text", text="\n".join(response_lines))]
+        
+    except Exception as e:
+        logger.error(f"Error formatting model details response: {e}")
+        return [TextContent(
+            type="text",
+            text=f"Error formatting model details: {str(e)}"
+        )]
+
+
+async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextContent]:
+    """Handle the get_model_details tool invocation with comprehensive validation."""
+    try:
+        # Validate input arguments
+        unique_id, model_name, project_id = _validate_model_arguments(arguments)
+        
+        # If we have a specific unique_id, validate and extract project from it
+        if unique_id:
+            try:
+                # Validate the project in unique_id exists
+                extracted_project = project_manager._validate_unique_id_project(unique_id)
+                
+                # Load artifacts for this specific project
+                artifacts = await project_manager.get_project_artifacts(extracted_project)
+                if extracted_project in artifacts:
+                    manifest, catalog = artifacts[extracted_project]
+                    
+                    # Find the model in this specific project
+                    model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name)
+                    
+                    if model_node and found_unique_id:
+                        return await _format_model_details_response(model_node, found_unique_id, catalog, extracted_project)
+                    else:
+                        # Model not found in the expected project
+                        return create_project_not_found_error(unique_id, f" in project '{extracted_project}'", "Model")
+            except ValueError as e:
+                # Project validation failed - return the helpful error message
+                return [TextContent(
+                    type="text",
+                    text=f"Invalid unique_id: {str(e)}"
+                )]
+        
+        # Multi-project search (when model_name provided or unique_id lookup failed)
+        if model_name:
+            found_models = await project_manager.find_model_in_projects(model_name, project_id)
+            
+            if not found_models:
+                identifier = unique_id if unique_id else model_name
+                project_info = f" in projects {project_id}" if project_id else ""
+                return create_project_not_found_error(identifier, project_info, "Model")
+            
+            if len(found_models) == 1:
+                # Single model found
+                found_model = found_models[0]
+                return await _format_model_details_response(
+                    found_model["manifest_data"], 
+                    found_model["unique_id"], 
+                    {"nodes": {found_model["unique_id"]: found_model["catalog_data"]}},
+                    found_model["project_id"]
+                )
+            else:
+                # Multiple models found - show disambiguation
+                response_lines = [
+                    f"Multiple models named '{model_name}' found:",
+                    ""
+                ]
+                for i, found_model in enumerate(found_models, 1):
+                    response_lines.extend([
+                        f"{i}. **Project:** {found_model['project_id']}",
+                        f"   **Unique ID:** {found_model['unique_id']}",
+                        f"   **Schema:** {found_model['manifest_data'].get('schema', 'N/A')}",
+                        f"   **Database:** {found_model['manifest_data'].get('database', 'N/A')}",
+                        ""
+                    ])
+                
+                response_lines.append("Please use the specific uniqueId to get details for the desired model.")
+                return [TextContent(type="text", text="\n".join(response_lines))]
+        
+        # Fallback: load artifacts and try single-project search
+        artifacts = await project_manager.get_project_artifacts(project_id or [])
+        if not artifacts:
+            return create_no_artifacts_error()
+        
+        # Search in available projects
+        for proj_id, (manifest, catalog) in artifacts.items():
+            model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name)
+            if model_node and found_unique_id:
+                return await _format_model_details_response(model_node, found_unique_id, catalog, proj_id)
+        
+        # Model not found in any project
+        identifier = unique_id if unique_id else model_name
+        return create_project_not_found_error(identifier, "", "Model")
         
     except FileNotFoundError as e:
         logger.error(f"File not found in get_model_details: {e}")
