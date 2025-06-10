@@ -190,6 +190,28 @@ class ProjectManager:
         except Exception as e:
             logger.warning(f"Error loading cached artifacts for {project_id}: {e}")
             return None
+
+    def _load_cached_artifacts_fallback(self, project_id: str) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+        """Load artifacts from cache regardless of validity (fallback for failed GitHub requests)."""
+        try:
+            manifest_path = self._get_cache_file_path(project_id, "manifest")
+            catalog_path = self._get_cache_file_path(project_id, "catalog")
+            
+            if not manifest_path.exists() or not catalog_path.exists():
+                return None
+            
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            
+            with open(catalog_path, 'r') as f:
+                catalog = json.load(f)
+            
+            logger.info(f"Loaded cached artifacts (fallback) for project {project_id}")
+            return manifest, catalog
+            
+        except Exception as e:
+            logger.warning(f"Error loading cached artifacts fallback for {project_id}: {e}")
+            return None
     
     def _cache_artifacts(self, project_id: str, manifest: Dict[str, Any], catalog: Dict[str, Any]):
         """Cache artifacts with UTC timestamp metadata."""
@@ -269,7 +291,17 @@ class ProjectManager:
                 
             except Exception as e:
                 logger.error(f"Error fetching GitHub artifacts for {project_id}: {e}")
-                raise
+                
+                # Try to load from cache as fallback
+                logger.info(f"Attempting to load cached artifacts as fallback for {project_id}")
+                cached_artifacts = self._load_cached_artifacts_fallback(project_id)
+                
+                if cached_artifacts:
+                    logger.warning(f"Using cached artifacts as fallback for {project_id} due to GitHub fetch failure")
+                    return cached_artifacts
+                else:
+                    logger.error(f"No cached artifacts available for fallback for {project_id}")
+                    raise
     
     def _load_local_artifacts(self, project_id: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Load artifacts from local filesystem."""

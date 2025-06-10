@@ -38,7 +38,8 @@ def get_model_details_tool() -> Tool:
                 },
                 "resource_id": {
                     "type": ["string", "array"],
-                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). If not provided, searches all available resources.",
+                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). Resource_id is the ID of a resource returned by get_resources(). Example: 'blockchain-models'",
+                    "not": {"type": ["boolean", "null"]},
                     "items": {
                         "type": "string"
                     },

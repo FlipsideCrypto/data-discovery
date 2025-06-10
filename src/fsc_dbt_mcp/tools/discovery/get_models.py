@@ -32,7 +32,8 @@ def get_models_tool() -> Tool:
                 },
                 "resource_id": {
                     "type": ["string", "array"],
-                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). If not provided, searches all available resources. DO NOT PASS `true` OR `null` AS `resource_id`!",
+                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). Resource_id is the ID of a resource returned by get_resources(). Example: 'blockchain-models'",
+                    "not": {"type": ["boolean", "null"]},
                     "items": {
                         "type": "string"
                     },
@@ -40,10 +41,10 @@ def get_models_tool() -> Tool:
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of models to return (default: 10, max: 200)",
-                    "default": 10,
+                    "description": "Maximum number of models to return (default: 25, max: 250)",
+                    "default": 25,
                     "minimum": 1,
-                    "maximum": 200
+                    "maximum": 250
                 }
             },
             "additionalProperties": False
@@ -60,7 +61,11 @@ def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str]
     level = arguments.get("level") 
     resource_id = normalize_null_to_none(arguments.get("resource_id"))
     
-    limit = arguments.get("limit", 10)
+    limit = arguments.get("limit", 25)
+    
+    # Require at least one filtering parameter
+    if not schema and not level and not resource_id:
+        raise ValueError("At least one parameter (schema, level, or resource_id) is required. Use get_resources() to see available options.")
     
     # Validate schema
     if schema is not None:
@@ -78,12 +83,8 @@ def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str]
             raise ValueError("level must be one of: bronze, silver, gold")
     
     # Validate limit
-    if not isinstance(limit, int) or limit < 1 or limit > 200:
-        raise ValueError("limit must be an integer between 1 and 200")
-    
-    # Set default to core if no schema or level provided
-    if not schema and not level:
-        schema = "core"
+    if not isinstance(limit, int) or limit < 1 or limit > 250:
+        raise ValueError("limit must be an integer between 1 and 250")
     
     return schema, level, resource_id, limit
 
@@ -140,15 +141,43 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
         # Validate input arguments
         schema, level, resource_id, limit = _validate_models_arguments(arguments)
         
-        # Load project artifacts
-        artifacts = await project_manager.get_project_artifacts(resource_id or [])
-        if not artifacts:
-            return create_no_artifacts_error()
+        # Load project artifacts with graceful handling of invalid resources
+        requested_resources = []
+        if resource_id:
+            if isinstance(resource_id, str):
+                requested_resources = [resource_id]
+            elif isinstance(resource_id, list):
+                requested_resources = resource_id
+        else:
+            # Get all available resources if none specified
+            from fsc_dbt_mcp.resources import resource_registry
+            requested_resources = resource_registry.list_project_ids()
         
-        # Collect all filtered models across projects
+        # Load artifacts one by one to handle failures gracefully
+        successful_artifacts = {}
+        failed_resources = []
+        
+        for res_id in requested_resources:
+            try:
+                artifacts = await project_manager.get_project_artifacts([res_id])
+                if artifacts and res_id in artifacts:
+                    successful_artifacts[res_id] = artifacts[res_id]
+                else:
+                    failed_resources.append(res_id)
+            except Exception as e:
+                logger.warning(f"Failed to load artifacts for resource {res_id}: {e}")
+                failed_resources.append(res_id)
+        
+        if not successful_artifacts:
+            if failed_resources:
+                return create_error_response(f"No valid resources found. Failed resources: {failed_resources}")
+            else:
+                return create_no_artifacts_error()
+        
+        # Collect all filtered models across successfully loaded projects
         all_filtered_models = []
         
-        for proj_id, (manifest, _) in artifacts.items():
+        for proj_id, (manifest, _) in successful_artifacts.items():
             # Get all models from manifest
             nodes = manifest.get("nodes", {})
             if not isinstance(nodes, dict):
@@ -170,14 +199,20 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
             truncated = False
         
         # Format response
-        filter_desc = f"schema '{schema}'" if schema else f"level '{level}'"
-        project_info = f" in projects {resource_id}" if resource_id else " across all projects"
+        filter_desc = f"schema '{schema}'" if schema else f"level '{level}'" if level else "all"
+        successful_projects = list(successful_artifacts.keys())
+        project_info = f" in projects {successful_projects}" if resource_id else " across all projects"
         
         response_lines = [
             f"# Models ({filter_desc}){project_info}",
             f"**Found:** {len(all_filtered_models)} models" + (" (truncated)" if truncated else ""),
-            ""
         ]
+        
+        # Add warning about failed resources if any
+        if failed_resources:
+            response_lines.append(f"**Warning:** Failed to load resources: {failed_resources}")
+        
+        response_lines.append("")
         
         if not all_filtered_models:
             available_resources = get_available_resources()

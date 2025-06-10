@@ -107,7 +107,7 @@ class DbtProjectResource:
             github_repo = location
         
         branch = self.data.get("target_branch", "main")
-        base_url = f"https://raw.githubusercontent.com/{github_repo}/{branch}/target"
+        base_url = f"https://raw.githubusercontent.com/{github_repo}/{branch}/docs"
         
         return {
             "manifest": f"{base_url}/manifest.json",
