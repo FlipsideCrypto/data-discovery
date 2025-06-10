@@ -103,35 +103,35 @@ def load_dbt_artifacts() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         raise
 
 
-def get_available_projects() -> List[str]:
-    """Get list of available project IDs from resource registry."""
+def get_available_resources() -> List[str]:
+    """Get list of available resource IDs from resource registry."""
     from fsc_dbt_mcp.resources import resource_registry
     return resource_registry.list_project_ids()
 
 
-def create_error_response(message: str, include_available_projects: bool = True) -> List[TextContent]:
-    """Create a standardized error response with optional available projects list."""
-    if include_available_projects:
-        available_projects = get_available_projects()
-        full_message = f"{message}. Available projects: {available_projects}"
+def create_error_response(message: str, include_available_resources: bool = True) -> List[TextContent]:
+    """Create a standardized error response with optional available resources list."""
+    if include_available_resources:
+        available_resources = get_available_resources()
+        full_message = f"{message}. Available resources: {available_resources}"
     else:
         full_message = message
     
     return [TextContent(type="text", text=full_message)]
 
 
-def create_project_not_found_error(identifier: str, project_info: str = "", 
+def create_resource_not_found_error(identifier: str, resource_info: str = "", 
                                   item_type: str = "item") -> List[TextContent]:
-    """Create a standardized 'not found' error with available projects."""
-    available_projects = get_available_projects()
-    project_suffix = project_info if project_info else " in any available projects"
-    message = f"{item_type.title()} '{identifier}' not found{project_suffix}. Available projects: {available_projects}"
+    """Create a standardized 'not found' error with available resources."""
+    available_resources = get_available_resources()
+    resource_suffix = resource_info if resource_info else " in any available resources"
+    message = f"{item_type.title()} '{identifier}' not found{resource_suffix}. Available resources: {available_resources}"
     return [TextContent(type="text", text=message)]
 
 
 def create_no_artifacts_error() -> List[TextContent]:
-    """Create a standardized 'no artifacts loaded' error with available projects."""
-    return create_error_response("No project artifacts could be loaded")
+    """Create a standardized 'no artifacts loaded' error with available resources."""
+    return create_error_response("No resource artifacts could be loaded")
 
 
 def validate_string_argument(value: Any, arg_name: str, allow_empty: bool = False) -> str:
@@ -148,4 +148,11 @@ def validate_string_argument(value: Any, arg_name: str, allow_empty: bool = Fals
     if any(char in value for char in ['/', '\\', '..', '\x00']):
         raise ValueError(f"{arg_name} contains invalid characters")
     
+    return value
+
+
+def normalize_null_to_none(value: Any) -> Any:
+    """Normalize null/undefined values to None for consistent handling."""
+    if value is None or value == "null" or (isinstance(value, str) and value.lower() == "null"):
+        return None
     return value

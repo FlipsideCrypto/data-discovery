@@ -26,7 +26,7 @@ def get_resource_data() -> Dict[str, Any]:
         "description": "dbt models for Bitcoin blockchain data analysis and exploration",
         "location": "/Users/jackforgash/gh/fs/bitcoin-models",
         "type": "local",
-        "aliases": ["bitcoin", "btc"],
+        "aliases": ["bitcoin", "btc", "bitcoin-models", "bitcoin_models"],
         "blockchain": "bitcoin",
         "artifact_location": {
             "manifest": "/Users/jackforgash/gh/fs/bitcoin-models/target/manifest.json",
@@ -40,7 +40,5 @@ def get_resource_data() -> Dict[str, Any]:
             "Address clustering",
             "UTXO tracking",
             "Fee analysis"
-        ],
-        "last_updated": "2024-12-01",
-        "models_count": 45
+        ]
     }

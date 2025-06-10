@@ -8,7 +8,7 @@ import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
 from fsc_dbt_mcp.project_manager import project_manager
-from .utils import create_error_response, create_project_not_found_error, create_no_artifacts_error, validate_string_argument, get_available_projects
+from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error, validate_string_argument, get_available_resources, normalize_null_to_none
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +30,9 @@ def get_models_tool() -> Tool:
                     "description": "Filter models by medallion level (bronze, silver, gold). Ignored if schema is provided.",
                     "enum": ["bronze", "silver", "gold"]
                 },
-                "project_id": {
+                "resource_id": {
                     "type": ["string", "array"],
-                    "description": "Project ID(s) to search in. Can be a single project ID string or array of project IDs (max 5). If not provided, searches all available projects.",
+                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). If not provided, searches all available resources. DO NOT PASS `true` OR `null` AS `resource_id`!",
                     "items": {
                         "type": "string"
                     },
@@ -58,7 +58,8 @@ def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str]
     
     schema = arguments.get("schema")
     level = arguments.get("level") 
-    project_id = arguments.get("project_id")
+    resource_id = normalize_null_to_none(arguments.get("resource_id"))
+    
     limit = arguments.get("limit", 10)
     
     # Validate schema
@@ -84,10 +85,10 @@ def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str]
     if not schema and not level:
         schema = "core"
     
-    return schema, level, project_id, limit
+    return schema, level, resource_id, limit
 
 
-def _filter_models_by_criteria(models: Dict[str, Any], schema: Optional[str], level: Optional[str], project_id: str) -> List[Dict[str, Any]]:
+def _filter_models_by_criteria(models: Dict[str, Any], schema: Optional[str], level: Optional[str], resource_id: str) -> List[Dict[str, Any]]:
     """Filter models based on schema or medallion level criteria."""
     filtered_models = []
     
@@ -125,7 +126,7 @@ def _filter_models_by_criteria(models: Dict[str, Any], schema: Optional[str], le
                 "path": model_info.get("original_file_path"),
                 "fqn": model_info.get("fqn", []),
                 "relation_name": model_info.get("relation_name"),
-                "project_id": project_id
+                "resource_id": resource_id
             }
             filtered_models.append(model_data)
     
@@ -137,10 +138,10 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
     """Handle the get_models tool invocation."""
     try:
         # Validate input arguments
-        schema, level, project_id, limit = _validate_models_arguments(arguments)
+        schema, level, resource_id, limit = _validate_models_arguments(arguments)
         
         # Load project artifacts
-        artifacts = await project_manager.get_project_artifacts(project_id or [])
+        artifacts = await project_manager.get_project_artifacts(resource_id or [])
         if not artifacts:
             return create_no_artifacts_error()
         
@@ -159,7 +160,7 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
             all_filtered_models.extend(project_models)
         
         # Sort all models by project, schema, then name
-        all_filtered_models = sorted(all_filtered_models, key=lambda x: (x.get("project_id", ""), x.get("schema", ""), x.get("name", "")))
+        all_filtered_models = sorted(all_filtered_models, key=lambda x: (x.get("resource_id", ""), x.get("schema", ""), x.get("name", "")))
         
         # Apply limit
         if len(all_filtered_models) > limit:
@@ -170,7 +171,7 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
         
         # Format response
         filter_desc = f"schema '{schema}'" if schema else f"level '{level}'"
-        project_info = f" in projects {project_id}" if project_id else " across all projects"
+        project_info = f" in projects {resource_id}" if resource_id else " across all projects"
         
         response_lines = [
             f"# Models ({filter_desc}){project_info}",
@@ -179,14 +180,14 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
         ]
         
         if not all_filtered_models:
-            available_projects = get_available_projects()
-            response_lines.append(f"No models found matching the specified criteria. Available projects: {available_projects}")
+            available_resources = get_available_resources()
+            response_lines.append(f"No models found matching the specified criteria. Available resources: {available_resources}")
             return [TextContent(type="text", text="\n".join(response_lines))]
         
         # Group by project first, then by schema for better organization
         models_by_project = {}
         for model in all_filtered_models:
-            model_project = model.get("project_id", "unknown")
+            model_project = model.get("resource_id", "unknown")
             if model_project not in models_by_project:
                 models_by_project[model_project] = {}
             

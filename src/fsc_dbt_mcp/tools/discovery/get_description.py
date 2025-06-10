@@ -10,7 +10,7 @@ import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
 from fsc_dbt_mcp.project_manager import project_manager
-from .utils import create_error_response, create_project_not_found_error, create_no_artifacts_error, validate_string_argument, get_available_projects
+from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error, validate_string_argument, get_available_resources, normalize_null_to_none
 
 logger = logging.getLogger(__name__)
 
@@ -28,16 +28,16 @@ def get_description_tool() -> Tool:
                     "description": "Name of the documentation block to retrieve (default: '__MCP__')",
                     "default": "__MCP__"
                 },
-                "project_id": {
+                "resource_id": {
                     "type": ["string", "array"],
-                    "description": "Project ID(s) to search in. Can be a single project ID string or array of project IDs (max 5). REQUIRED to avoid cross-contamination of blockchain-specific documentation.",
+                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). REQUIRED to avoid cross-contamination of blockchain-specific documentation.",
                     "items": {
                         "type": "string"
                     },
                     "maxItems": 5
                 }
             },
-            "required": ["project_id"],
+            "required": ["resource_id"],
             "additionalProperties": False
         }
     )
@@ -48,18 +48,18 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
     try:
         # Extract arguments
         doc_name = arguments.get("doc_name", "__MCP__")
-        project_id = arguments.get("project_id")
+        resource_id = normalize_null_to_none(arguments.get("resource_id"))
         
         doc_name = validate_string_argument(doc_name, "doc_name")
         
-        # Require project_id to avoid cross-contamination of blockchain-specific context
-        if not project_id:
+        # Require resource_id to avoid cross-contamination of blockchain-specific context
+        if not resource_id:
             return create_error_response(
-                "project_id is required for get_description to avoid cross-contamination of blockchain-specific documentation. Please specify which project(s) to search"
+                "resource_id is required for get_description to avoid cross-contamination of blockchain-specific documentation. Please specify which project(s) to search"
             )
         
         # Load project artifacts
-        artifacts = await project_manager.get_project_artifacts(project_id)
+        artifacts = await project_manager.get_project_artifacts(resource_id)
         if not artifacts:
             return create_no_artifacts_error()
         
@@ -81,8 +81,8 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
                     all_matching_docs.append((proj_id, doc_id, doc_info))
         
         if not all_matching_docs:
-            project_info = f" in projects {project_id}" if project_id else ""
-            return create_project_not_found_error(doc_name, project_info, "Documentation block")
+            resource_info = f" in resources {resource_id}" if resource_id else ""
+            return create_resource_not_found_error(doc_name, resource_info, "Documentation block")
         
         # Format response for all matching docs
         response_lines = [
