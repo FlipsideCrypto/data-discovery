@@ -12,6 +12,7 @@ Model Context Protocol (MCP) server for dbt project discovery. Query Flipside db
    ```
 
 2. **Add to Claude Desktop** (`claude_desktop_config.json`):
+Configure a local MCP Server for Claude desktop with the following parameters. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user#2-add-the-filesystem-mcp-server) for additional help. A file `claude_config.example.json` is also maintained.  
    ```json
    {
      "mcpServers": {
@@ -46,9 +47,9 @@ Currently disabled pending multi-project migration:
 ## Configuration
 
 ### Environment Variables
-- `DEPLOYMENT_MODE` - Set to `"desktop"` for Claude Desktop (required)
+- `DEPLOYMENT_MODE` - Set to `"desktop"` for Claude Desktop (required or Claude Desktop will try to use an unwritable cache directory)
 - `DEBUG` - Enable debug logging (`"true"`/`"false"`)
-- `DBT_PATH` - Full path to dbt executable (for pyenv users)
+- `DBT_PATH` - Full path to dbt executable (not necessary as all `dbt_cli` tools are disabled and will probably be deprecated)
 
 ### Deployment Modes
 - **`desktop`** (recommended): Uses `~/.cache/fsc-dbt-mcp/` for cache
