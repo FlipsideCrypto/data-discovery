@@ -1,30 +1,14 @@
-Retrieves documentation blocks from dbt manifests by name (e.g., __overview____ blocks) to provide domain expertise and guidelines. **Supports multi-resource operations** - can search across multiple blockchain data resources to find comprehensive documentation.
-
-The DEFAULT and primary documentation block is `__overview____` as this often contains descriptive information about the dbt project. This is not comprehensive and should not be relied on as the sole source of information for a project.  
-
-IF EXISTS, a documentation block `__MCP__` contains **expert information** about the project or blockchain.  
+Retrieves documentation blocks from dbt projects. Use for getting project descriptions, expert context (`__MCP__` blocks), and domain-specific documentation.
 
 **Parameters:**
-`doc_name`: Name of the documentation block to retrieve (default: "__overview__")
-`resource_id`: **REQUIRED** - Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). Required to avoid cross-contamination of blockchain-specific documentation.
+- `doc_name`: Documentation block name (default: "__overview__")
+- `resource_id`: **REQUIRED** - Single string or array of project IDs from get_resources()
 
-**Multi-Resource Documentation Discovery:**
-- Searches across multiple blockchain data resources simultaneously
-- Aggregates documentation from different resources (e.g., Bitcoin, Ethereum, multi-chain)
-- Results grouped by resource for clarity
-- Perfect for gathering comprehensive domain expertise across blockchain ecosystems
+**Key blocks:**
+- `__overview__`: Project description
+- `__MCP__`: Expert blockchain knowledge and context
 
-**Use Cases:**
-- **General project information**: Search for the default `__overview__` documentation.
-- **Expert context building**: Find `__MCP__` blocks across resources to understand blockchain data modeling patterns
-- **Column documentation**: Get specific column docs without loading entire model metadata
-- **Cross-resource guidelines**: Access documentation blocks that provide guidelines across multiple blockchain datasets
-- **Lightweight queries**: Get just documentation content when you don't need full model metadata
-
-**Usage Examples:**
-1. **Get high-level project information**: `get_description(doc_name="__overview__", resource_id="ethereum-models")`
-2. **Get expert context for specific resource**: `get_description(doc_name="__MCP__", resource_id="bitcoin-models")`
-3. **Find documentation in multiple blockchain resources**: `get_description(doc_name="trading_metrics", resource_id=["ethereum-models", "bitcoin-models"])`
-4. **Resource-specific documentation**: `get_description(doc_name="defi_concepts", resource_id="ethereum-models")`
-
-**Important:** `resource_id` is required to prevent mixing blockchain-specific context that could confuse analysis.
+**Examples:**
+- `get_description(resource_id="bitcoin-models")` - Get Bitcoin project overview
+- `get_description(doc_name="__MCP__", resource_id="ethereum-models")` - Get Ethereum expert context
+- `get_description(resource_id=["bitcoin-models", "ethereum-models"])` - Multi-project search

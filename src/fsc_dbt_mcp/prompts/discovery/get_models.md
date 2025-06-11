@@ -1,35 +1,13 @@
-Retrieves a list of dbt models with filtering by schema or medallion level (bronze/silver/gold). **Supports multi-resource operations** - can search across multiple blockchain data resources simultaneously. Combines functionality of get_all_models and get_gold_models in one tool.
-
-**IMPORTANT:** At least one parameter (schema, level, or resource_id) is required. Use get_resources() first to see available options.
+List and filter dbt models across projects. **At least one parameter required.**
 
 **Parameters:**
-`schema`: Filter models by schema name (e.g., 'core', 'defi', 'nft'). Takes precedence over level if both are provided.
-`level`: Filter models by medallion level (bronze, silver, gold). Ignored if schema is provided.
-`resource_id`: Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). If not provided, searches all available resources. DO NOT PASS `true` OR `null` AS `resource_id`!
-`limit`: Maximum number of models to return (default: 25, max: 250)
+- `schema`: Schema name (e.g., "core", "defi", "nft") - takes precedence over level
+- `level`: Medallion level ("bronze", "silver", "gold") - ignored if schema provided  
+- `resource_id`: Project ID(s) to search (from get_resources()) - searches all if omitted
+- `limit`: Max results (default: 25, max: 250)
 
-**Multi-Resource Model Discovery:**
-- Search across multiple blockchain data resources (Bitcoin, Ethereum, multi-chain, etc.)
-- Results organized hierarchically: Resource → Schema → Models
-- Each model includes resource context for clear identification
-- Perfect for exploring model structure across different blockchain ecosystems
-- Supports filtering by medallion architecture levels across all resources
-
-**Graceful Error Handling:**
-- Invalid resources are skipped, valid ones are processed
-- Returns partial results with warnings about failed resources
-- If all resources fail, provides helpful error with available options
-
-**Usage Examples:**
-1. **Core models across all resources**: `get_models(schema="core")`
-2. **DeFi models in specific resources**: `get_models(schema="defi", resource_id=["ethereum-models", "polygon-models"])`
-3. **Gold-level models across blockchain resources**: `get_models(level="gold", resource_id=["bitcoin-models", "ethereum-models"])`
-4. **All core models in single resource**: `get_models(schema="core", resource_id="ethereum-models", limit=50)`
-5. **Cross-resource NFT exploration**: `get_models(schema="nft")`
-6. **Models in specific resource**: `get_models(resource_id="bitcoin-models")`
-
-**Perfect for:**
-- Exploring model structure across blockchain ecosystems
-- Finding models within specific data layers or business domains
-- Cross-resource analysis and comparison
-- Understanding medallion architecture implementation across resources
+**Examples:**
+- `get_models(schema="core")` - All core models across projects
+- `get_models(level="gold", resource_id="ethereum-models")` - Gold models in Ethereum project
+- `get_models(schema="defi", resource_id=["ethereum-models", "polygon-models"])` - DeFi models in specific projects
+- `get_models(resource_id="bitcoin-models")` - All models in Bitcoin project

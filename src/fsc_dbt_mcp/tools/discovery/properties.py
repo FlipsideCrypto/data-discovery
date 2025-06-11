@@ -44,23 +44,29 @@ class ResourceIdProperty(ToolProperty):
         """Generate JSON Schema for resource_id parameter."""
         default_description = (
             "resource_id is the ID returned by get_resources() and represents a dbt project. "
-            "resource_id can be a single string or an array of strings. resource_id cannot be any other type. "
-            "If resource_id is optional, choose to omit passing it instead of passing null or false."
-            "example: `bitcoin-models` or `['bitcoin-models', 'ethereum-models', 'solana-models']`"
+            "IMPORTANT: For multiple projects, pass as an array: [\"bitcoin-models\", \"ethereum-models\"]. "
+            "For single project, pass as string: \"bitcoin-models\". "
+            "Do NOT pass as string when you mean array. "
+            "If optional, omit the parameter entirely rather than passing null or false."
         )
         
         return {
             "oneOf": [
                 {
                     "type": "string",
-                    "description": "Single resource ID (e.g., 'bitcoin-models')"
+                    "description": "Single resource ID",
+                    "examples": ["bitcoin-models", "ethereum-models", "solana-models"]
                 },
                 {
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
-                    "description": "Array of resource IDs (e.g., ['bitcoin-models', 'ethereum-models'])"
+                    "description": "Array of resource IDs for multi-project search",
+                    "examples": [
+                        ["bitcoin-models", "ethereum-models"],
+                        ["ethereum-models", "polygon-models", "arbitrum-models"]
+                    ]
                 }
             ],
             "description": self.description or default_description
@@ -108,8 +114,24 @@ class ResourceIdProperty(ToolProperty):
                 raise ValueError("resource_id is required for this operation")
             return None
         
-        # Validate string resource_id
+        # Handle string that might be JSON array format
         if isinstance(resource_id, str):
+            # Check if this looks like a JSON array string
+            if resource_id.strip().startswith('[') and resource_id.strip().endswith(']'):
+                try:
+                    import json
+                    parsed_array = json.loads(resource_id)
+                    if isinstance(parsed_array, list):
+                        # Recursively validate the parsed array
+                        temp_args = {"resource_id": parsed_array}
+                        return self.validate_and_extract(temp_args)
+                    else:
+                        raise ValueError("Parsed JSON is not an array")
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.debug(f"[PROPS] Failed to parse resource_id as JSON array: {e}")
+                    # Fall through to treat as regular string
+            
+            # Treat as regular string resource_id
             validated_id = self._validate_string(resource_id, "resource_id")
             # Check if resource exists in registry
             self._validate_resource_exists(validated_id)
