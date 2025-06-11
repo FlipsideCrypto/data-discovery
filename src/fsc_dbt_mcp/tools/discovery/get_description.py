@@ -27,11 +27,7 @@ def get_description_tool() -> Tool:
     return Tool(
         name="get_description",
         description=get_prompt("discovery/get_description"),
-        inputSchema=_tool_properties.get_input_schema(required_properties=["resource_id"]),
-        annotations={
-            "title": "Get Documentation",
-            "readOnlyHint": True
-        }
+        inputSchema=_tool_properties.get_input_schema(required_properties=["resource_id"])
     )
 
 

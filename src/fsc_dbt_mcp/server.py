@@ -57,7 +57,7 @@ def create_server() -> Server:
     config = ServerConfig()
     config.validate()
     
-    server = Server("fsc-dbt-mcp")
+    server = Server("data-discovery")
     
     @server.list_resources()
     async def list_resources() -> List[types.Resource]:

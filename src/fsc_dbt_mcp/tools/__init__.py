@@ -1,9 +1,9 @@
 """
-Custom tools for the fsc-dbt-mcp server.
+Custom tools for the data-discovery server.
 
 Includes:
 - Discovery tools for dbt model exploration
-- dbt CLI tools imported from dbt-mcp package
+- dbt CLI tools inspired by dbt-mcp package
 """
 
 from .discovery import get_model_details_tool, handle_get_model_details

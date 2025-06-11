@@ -1,1 +1,1 @@
-# Custom dbt MCP Server - Core Tools Only
+# Custom dbt MCP Server - data-discovery
