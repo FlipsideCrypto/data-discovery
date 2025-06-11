@@ -1,5 +1,5 @@
 """
-Prompt management for fsc-dbt-mcp server.
+Prompt management for data-discovery server.
 """
 
 from .prompts import get_prompt

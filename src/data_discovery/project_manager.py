@@ -25,7 +25,7 @@ class ProjectManagerConfig:
         self.MAX_PROJECTS = int(os.getenv('MAX_PROJECTS', '5'))
         self.DEPLOYMENT_MODE = os.getenv('DEPLOYMENT_MODE', 'local').lower()
         self.CACHE_DIR = os.getenv('CACHE_DIR', self._get_default_cache_dir())
-        self.CACHE_TTL_SECONDS = int(os.getenv('CACHE_TTL_SECONDS', '3600'))  # 1 hour
+        self.CACHE_TTL_SECONDS = int(os.getenv('CACHE_TTL_SECONDS', '86400'))  # 24 hours
         self.MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', '52428800'))  # 50MB
     
     def _get_default_cache_dir(self) -> str:
@@ -65,34 +65,42 @@ class ProjectManager:
             logger.error("Try setting DEPLOYMENT_MODE environment variable to 'desktop' for Claude Desktop")
             raise RuntimeError(f"Cannot create cache directory. Error: {e}")
     
-    def _validate_project_ids(self, project_ids: Union[str, List[str], None]) -> List[str]:
-        """Validate and normalize project IDs."""
-        # Get available project IDs for error messages
-        available_project_ids = resource_registry.list_project_ids()
+    def _validate_resource_ids(self, resource_ids: Union[str, List[str], None]) -> List[str]:
+        """Validate and normalize resource IDs."""
+        # Get available resource IDs for error messages
+        available_resource_ids = resource_registry.list_project_ids()
         
-        # Handle null/None case - treat as empty (search all projects)
-        if project_ids is None:
+        # Handle null/None case - treat as empty (search all resources)
+        if resource_ids is None:
             return []
         
-        if isinstance(project_ids, str):
-            project_ids = [project_ids]
+        if isinstance(resource_ids, str):
+            resource_ids = [resource_ids]
         
-        if not isinstance(project_ids, list):
-            raise ValueError(f"project_ids must be a string or list of strings. Available projects: {available_project_ids}")
+        if not isinstance(resource_ids, list):
+            raise ValueError(f"resource_ids must be a string or list of strings. Available resources: {available_resource_ids}")
         
-        if len(project_ids) == 0:
-            # Empty list is valid - means search all projects
+        if len(resource_ids) == 0:
+            # Empty list is valid - means search all resources
             return []
         
-        if len(project_ids) > self.config.MAX_PROJECTS:
-            raise ValueError(f"Cannot request more than {self.config.MAX_PROJECTS} projects (requested: {len(project_ids)}). Available projects: {available_project_ids}")
+        if len(resource_ids) > self.config.MAX_PROJECTS:
+            raise ValueError(f"Cannot request more than {self.config.MAX_PROJECTS} resources (requested: {len(resource_ids)}). Available resources: {available_resource_ids}")
         
-        # Validate each project ID exists in resource registry
-        for project_id in project_ids:
-            if project_id not in available_project_ids:
-                raise ValueError(f"Unknown project ID: {project_id}. Available projects: {available_project_ids}")
+        # Validate each resource ID exists in resource registry
+        for resource_id in resource_ids:
+            # Check for None/null values in the list
+            if resource_id is None or resource_id == "null":
+                raise ValueError(f"resource_id cannot be null. Available resources: {available_resource_ids}")
+            
+            # Check for empty strings
+            if not isinstance(resource_id, str) or not resource_id.strip():
+                raise ValueError(f"resource_id must be a non-empty string. Available resources: {available_resource_ids}")
+            
+            if resource_id not in available_resource_ids:
+                raise ValueError(f"Unknown resource ID: {resource_id}. Available resources: {available_resource_ids}")
         
-        return project_ids
+        return resource_ids
     
     def _extract_project_from_unique_id(self, unique_id: str) -> Optional[str]:
         """Extract project ID from unique_id format: model.project_name.model_name"""
@@ -190,6 +198,28 @@ class ProjectManager:
         except Exception as e:
             logger.warning(f"Error loading cached artifacts for {project_id}: {e}")
             return None
+
+    def _load_cached_artifacts_fallback(self, project_id: str) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+        """Load artifacts from cache regardless of validity (fallback for failed GitHub requests)."""
+        try:
+            manifest_path = self._get_cache_file_path(project_id, "manifest")
+            catalog_path = self._get_cache_file_path(project_id, "catalog")
+            
+            if not manifest_path.exists() or not catalog_path.exists():
+                return None
+            
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            
+            with open(catalog_path, 'r') as f:
+                catalog = json.load(f)
+            
+            logger.info(f"Loaded cached artifacts (fallback) for project {project_id}")
+            return manifest, catalog
+            
+        except Exception as e:
+            logger.warning(f"Error loading cached artifacts fallback for {project_id}: {e}")
+            return None
     
     def _cache_artifacts(self, project_id: str, manifest: Dict[str, Any], catalog: Dict[str, Any]):
         """Cache artifacts with UTC timestamp metadata."""
@@ -269,7 +299,17 @@ class ProjectManager:
                 
             except Exception as e:
                 logger.error(f"Error fetching GitHub artifacts for {project_id}: {e}")
-                raise
+                
+                # Try to load from cache as fallback
+                logger.info(f"Attempting to load cached artifacts as fallback for {project_id}")
+                cached_artifacts = self._load_cached_artifacts_fallback(project_id)
+                
+                if cached_artifacts:
+                    logger.warning(f"Using cached artifacts as fallback for {project_id} due to GitHub fetch failure")
+                    return cached_artifacts
+                else:
+                    logger.error(f"No cached artifacts available for fallback for {project_id}")
+                    raise
     
     def _load_local_artifacts(self, project_id: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Load artifacts from local filesystem."""
@@ -301,18 +341,20 @@ class ProjectManager:
             logger.error(f"Error loading local artifacts for {project_id}: {e}")
             raise
     
-    async def get_project_artifacts(self, project_ids: Union[str, List[str]]) -> Dict[str, Tuple[Dict[str, Any], Dict[str, Any]]]:
-        """Get manifest and catalog artifacts for specified projects."""
-        project_ids = self._validate_project_ids(project_ids)
+    async def get_project_artifacts(self, resource_ids: Union[str, List[str]]) -> Dict[str, Tuple[Dict[str, Any], Dict[str, Any]]]:
+        """Get manifest and catalog artifacts for specified resources."""
+        # Validate resource IDs first - this will raise on invalid input
+        # Do NOT continue processing if validation fails
+        resource_ids = self._validate_resource_ids(resource_ids)
         
-        # If no project IDs specified (empty list), load all available projects
-        if not project_ids:
-            project_ids = resource_registry.list_project_ids()
-            logger.info(f"No project_ids specified, loading all available projects: {project_ids}")
+        # If no resource IDs specified (empty list), load all available resources
+        if not resource_ids:
+            resource_ids = resource_registry.list_project_ids()
+            logger.info(f"No resource_ids specified, loading all available resources: {resource_ids}")
         
         artifacts = {}
         
-        for project_id in project_ids:
+        for project_id in resource_ids:
             try:
                 # Try cache first
                 cached_artifacts = self._load_cached_artifacts(project_id)
@@ -341,21 +383,24 @@ class ProjectManager:
         
         if not artifacts:
             available_projects = resource_registry.list_project_ids()
-            if not project_ids:
-                raise RuntimeError(f"Failed to load artifacts for any available projects: {available_projects}")
+            if not resource_ids:
+                raise RuntimeError(f"Failed to load artifacts for any available resources: {available_projects}")
             else:
-                raise RuntimeError(f"Failed to load artifacts for any of the requested projects: {project_ids}. Available projects: {available_projects}")
+                raise RuntimeError(f"Failed to load artifacts for any of the requested resources: {resource_ids}. Available resources: {available_projects}")
         
         return artifacts
     
-    async def find_model_in_projects(self, model_name: str, project_ids: Optional[Union[str, List[str]]] = None) -> List[Dict[str, Any]]:
-        """Find model across specified projects or all projects."""
-        if project_ids is None:
-            project_ids = resource_registry.list_project_ids()
-            logger.info(f"No project_ids specified for model search, using all available projects: {project_ids}")
+    async def find_model_in_projects(self, model_name: str, resource_ids: Optional[Union[str, List[str]]] = None) -> List[Dict[str, Any]]:
+        """Find model across specified resources or all resources."""
+        if resource_ids is None:
+            all_resources = resource_registry.list_project_ids()
+            if len(all_resources) > self.config.MAX_PROJECTS:
+                raise ValueError(f"Too many resources available ({len(all_resources)}). Please specify resource_id to search specific projects. Available resources: {all_resources[:10]}{'...' if len(all_resources) > 10 else ''}")
+            resource_ids = all_resources
+            logger.info(f"No resource_ids specified for model search, using all available resources: {resource_ids}")
         
-        project_ids = self._validate_project_ids(project_ids)
-        artifacts = await self.get_project_artifacts(project_ids)
+        resource_ids = self._validate_resource_ids(resource_ids)
+        artifacts = await self.get_project_artifacts(resource_ids)
         
         found_models = []
         
@@ -371,7 +416,7 @@ class ProjectManager:
                     catalog_node = catalog.get("nodes", {}).get(node_id, {})
                     
                     model_info = {
-                        "project_id": project_id,
+                        "resource_id": project_id,
                         "unique_id": node_id,
                         "manifest_data": node,
                         "catalog_data": catalog_node

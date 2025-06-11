@@ -58,3 +58,7 @@ temp/
 
 # dbt artifacts
 target/
+
+# local claude config
+CLAUDE.local.md
+.claude/context

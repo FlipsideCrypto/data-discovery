@@ -9,11 +9,20 @@ from typing import Dict, Any, Optional, Tuple
 from mcp.types import Tool, TextContent
 import logging
 
-from fsc_dbt_mcp.prompts import get_prompt
-from fsc_dbt_mcp.project_manager import project_manager
-from .utils import create_error_response, create_project_not_found_error, create_no_artifacts_error, validate_string_argument
+from data_discovery.prompts import get_prompt
+from data_discovery.project_manager import project_manager
+from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error
+from .properties import ToolPropertySet, UNIQUE_ID, MODEL_NAME, TABLE_NAME, STANDARD_RESOURCE_ID
 
 logger = logging.getLogger(__name__)
+
+# Define tool properties
+_tool_properties = ToolPropertySet({
+    "uniqueId": UNIQUE_ID,
+    "model_name": MODEL_NAME,
+    "table_name": TABLE_NAME,
+    "resource_id": STANDARD_RESOURCE_ID
+})
 
 
 def get_model_details_tool() -> Tool:
@@ -21,62 +30,46 @@ def get_model_details_tool() -> Tool:
     return Tool(
         name="get_model_details",
         description=get_prompt("discovery/get_model_details"),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "uniqueId": {
-                    "type": "string",
-                    "description": "The unique identifier of the model (format: 'model.project_name.model_name'). STRONGLY RECOMMENDED when available."
-                },
-                "model_name": {
-                    "type": "string", 
-                    "description": "The name of the dbt model. Only use when uniqueId is unavailable."
-                },
-                "project_id": {
-                    "type": ["string", "array"],
-                    "description": "Project ID(s) to search in. Can be a single project ID string or array of project IDs (max 5). If not provided, searches all available projects.",
-                    "items": {
-                        "type": "string"
-                    },
-                    "maxItems": 5
-                }
-            },
-            "oneOf": [
-                {"required": ["uniqueId"]},
-                {"required": ["model_name"]}
+        inputSchema=_tool_properties.get_input_schema(
+            one_of_groups=[
+                ["uniqueId"],
+                ["model_name"],
+                ["table_name"]
             ]
-        }
+        )
     )
 
 
-def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[Any]]:
+def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[Any]]:
     """Validate and extract model identification arguments."""
+    logger.debug(f"[GET_MODEL] _validate_model_arguments called with: {arguments}")
+    
     if not isinstance(arguments, dict):
         raise ValueError("Arguments must be a dictionary")
     
-    unique_id = arguments.get("uniqueId")
-    model_name = arguments.get("model_name")
-    project_id = arguments.get("project_id")
+    # Validate and extract all arguments using properties
+    params = _tool_properties.validate_and_extract_all(arguments)
     
-    # Input sanitization
-    if unique_id is not None:
-        unique_id = validate_string_argument(unique_id, "uniqueId")
-        
-        # Basic format validation for unique_id
-        if not unique_id.startswith("model."):
-            raise ValueError("uniqueId must start with 'model.'")
+    unique_id = params["uniqueId"]
+    model_name = params["model_name"]
+    table_name = params["table_name"]
+    resource_id = params["resource_id"]
     
-    if model_name is not None:
-        model_name = validate_string_argument(model_name, "model_name")
+    logger.debug(f"[GET_MODEL] Extracted params - unique_id: {unique_id}, model_name: {model_name}, table_name: {table_name}, resource_id: {resource_id}")
     
-    if not unique_id and not model_name:
-        raise ValueError("Either uniqueId or model_name must be provided")
+    # Input sanitization and validation for unique_id format
+    if unique_id is not None and not unique_id.startswith("model."):
+        raise ValueError("uniqueId must start with 'model.'")
     
-    return unique_id, model_name, project_id
+    # Ensure at least one identifier is provided
+    if not unique_id and not model_name and not table_name:
+        raise ValueError("Either uniqueId, model_name, or table_name must be provided")
+    
+    return unique_id, model_name, table_name, resource_id
 
 
 def _find_model_node(manifest: Dict[str, Any], unique_id: Optional[str], 
-                     model_name: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+                     model_name: Optional[str], table_name: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Find model node in manifest with proper error handling."""
     nodes = manifest.get("nodes", {})
     
@@ -98,11 +91,39 @@ def _find_model_node(manifest: Dict[str, Any], unique_id: Optional[str],
                 node.get("name") == model_name):
                 return node, node_id
     
+    elif table_name:
+        # Search by table name - check relation_name and extract table name from model patterns
+        matching_models = []
+        
+        for node_id, node in nodes.items():
+            if not isinstance(node, dict) or node.get("resource_type") != "model":
+                continue
+            
+            # Check relation_name (e.g., "flipside_dev_models.core.fact_transactions")
+            relation_name = node.get("relation_name", "")
+            if relation_name and relation_name.endswith(f".{table_name}"):
+                matching_models.append((node, node_id))
+                continue
+            
+            # Check if model name ends with the table name (e.g., "core__fact_transactions")
+            model_node_name = node.get("name", "")
+            if model_node_name.endswith(f"__{table_name}") or model_node_name.endswith(f"_{table_name}"):
+                matching_models.append((node, node_id))
+                continue
+            
+            # Check if the model name exactly matches the table name
+            if model_node_name == table_name:
+                matching_models.append((node, node_id))
+        
+        # Return first match if any found
+        if matching_models:
+            return matching_models[0]
+    
     return None, None
 
 
 async def _format_model_details_response(model_node: Dict[str, Any], unique_id: str, 
-                                        catalog: Dict[str, Any], project_id: str) -> list[TextContent]:
+                                        catalog: Dict[str, Any], resource_id: str) -> list[TextContent]:
     """Format model details into a comprehensive response."""
     try:
         # Get catalog information if available
@@ -130,11 +151,15 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
             "constraints": model_node.get("constraints", []),
             "version": model_node.get("version"),
             "latest_version": model_node.get("latest_version"),
-            "project_id": project_id,
+            "resource_id": resource_id,
         }
         
         # Add column information from manifest
         manifest_columns = model_node.get("columns", {})
+        # Ensure manifest_columns is a dictionary, not None
+        if not isinstance(manifest_columns, dict):
+            manifest_columns = {}
+            
         columns = {}
         for col_name, col_info in manifest_columns.items():
             columns[col_name] = {
@@ -148,6 +173,10 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
         
         # Enhance with catalog column information if available
         catalog_columns = catalog_node.get("columns", {})
+        # Ensure catalog_columns is a dictionary, not None
+        if not isinstance(catalog_columns, dict):
+            catalog_columns = {}
+            
         for col_name, col_info in catalog_columns.items():
             if col_name in columns:
                 columns[col_name].update({
@@ -179,7 +208,7 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
         # Format the response
         response_lines = [
             f"# Model Details: {model_details['name']}",
-            f"**Project:** {model_details['project_id']}",
+            f"**Project:** {model_details['resource_id']}",
             f"**Unique ID:** {model_details['unique_id']}",
             f"**Database:** {model_details['database']}",
             f"**Schema:** {model_details['schema']}",
@@ -306,7 +335,8 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
     """Handle the get_model_details tool invocation with comprehensive validation."""
     try:
         # Validate input arguments
-        unique_id, model_name, project_id = _validate_model_arguments(arguments)
+        logger.debug(f"[GET_MODEL] Called with arguments: {arguments}")
+        unique_id, model_name, table_name, resource_id = _validate_model_arguments(arguments)
         
         # If we have a specific unique_id, validate and extract project from it
         if unique_id:
@@ -320,28 +350,30 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
                     manifest, catalog = artifacts[extracted_project]
                     
                     # Find the model in this specific project
-                    model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name)
+                    model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name, table_name)
                     
                     if model_node and found_unique_id:
                         return await _format_model_details_response(model_node, found_unique_id, catalog, extracted_project)
                     else:
                         # Model not found in the expected project
-                        return create_project_not_found_error(unique_id, f" in project '{extracted_project}'", "Model")
+                        return create_resource_not_found_error(unique_id, f" in project '{extracted_project}'", "Model")
             except ValueError as e:
                 # Project validation failed - return the helpful error message
+                logger.debug(f"[GET_MODEL] Project validation failed for unique_id: {e}")
                 return [TextContent(
                     type="text",
-                    text=f"Invalid unique_id: {str(e)}"
+                    text=f"Invalid unique_id: {str(e)}",
+                    isError=True
                 )]
         
         # Multi-project search (when model_name provided or unique_id lookup failed)
         if model_name:
-            found_models = await project_manager.find_model_in_projects(model_name, project_id)
+            found_models = await project_manager.find_model_in_projects(model_name, resource_id)
             
             if not found_models:
                 identifier = unique_id if unique_id else model_name
-                project_info = f" in projects {project_id}" if project_id else ""
-                return create_project_not_found_error(identifier, project_info, "Model")
+                project_info = f" in projects {resource_id}" if resource_id else ""
+                return create_resource_not_found_error(identifier, project_info, "Model")
             
             if len(found_models) == 1:
                 # Single model found
@@ -350,7 +382,7 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
                     found_model["manifest_data"], 
                     found_model["unique_id"], 
                     {"nodes": {found_model["unique_id"]: found_model["catalog_data"]}},
-                    found_model["project_id"]
+                    found_model["resource_id"]
                 )
             else:
                 # Multiple models found - show disambiguation
@@ -360,7 +392,7 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
                 ]
                 for i, found_model in enumerate(found_models, 1):
                     response_lines.extend([
-                        f"{i}. **Project:** {found_model['project_id']}",
+                        f"{i}. **Project:** {found_model['resource_id']}",
                         f"   **Unique ID:** {found_model['unique_id']}",
                         f"   **Schema:** {found_model['manifest_data'].get('schema', 'N/A')}",
                         f"   **Database:** {found_model['manifest_data'].get('database', 'N/A')}",
@@ -371,35 +403,38 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
                 return [TextContent(type="text", text="\n".join(response_lines))]
         
         # Fallback: load artifacts and try single-project search
-        artifacts = await project_manager.get_project_artifacts(project_id or [])
+        artifacts = await project_manager.get_project_artifacts(resource_id or [])
         if not artifacts:
             return create_no_artifacts_error()
         
         # Search in available projects
         for proj_id, (manifest, catalog) in artifacts.items():
-            model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name)
+            model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name, table_name)
             if model_node and found_unique_id:
                 return await _format_model_details_response(model_node, found_unique_id, catalog, proj_id)
         
         # Model not found in any project
-        identifier = unique_id if unique_id else model_name
-        return create_project_not_found_error(identifier, "", "Model")
+        identifier = unique_id if unique_id else (model_name if model_name else table_name)
+        return create_resource_not_found_error(identifier, "", "Model")
         
     except FileNotFoundError as e:
         logger.error(f"File not found in get_model_details: {e}")
         return [TextContent(
             type="text",
-            text=f"Required dbt artifacts not found: {str(e)}"
+            text=f"Required dbt artifacts not found: {str(e)}",
+            isError=True
         )]
     except ValueError as e:
         logger.error(f"Invalid input in get_model_details: {e}")
         return [TextContent(
             type="text",
-            text=f"Invalid input: {str(e)}"
+            text=f"Invalid input: {str(e)}",
+            isError=True
         )]
     except Exception as e:
         logger.error(f"Unexpected error in get_model_details: {e}")
         return [TextContent(
             type="text",
-            text=f"Internal error retrieving model details: {str(e)}"
+            text=f"Internal error retrieving model details: {str(e)}",
+            isError=True
         )]

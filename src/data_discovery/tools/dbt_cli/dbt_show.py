@@ -7,7 +7,7 @@ from typing import Dict, Any, List
 from mcp.types import Tool, TextContent
 import logging
 
-from fsc_dbt_mcp.prompts import get_prompt
+from data_discovery.prompts import get_prompt
 from .utils import run_dbt_command
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def dbt_show_tool() -> Tool:
                 }
             },
             "required": ["sql_query"],
-            "additionalProperties": False
+            "additionalProperties": True
         },
     )
 
@@ -90,7 +90,7 @@ async def handle_dbt_show(arguments: Dict[str, Any]) -> List[TextContent]:
     
     except ValueError as e:
         logger.error(f"Invalid input for dbt_show: {e}")
-        return [TextContent(type="text", text=f"Invalid input: {str(e)}")]
+        return [TextContent(type="text", text=f"Invalid input: {str(e)}", isError=True)]
     except Exception as e:
         logger.error(f"Error executing dbt_show: {e}")
-        return [TextContent(type="text", text=f"Error executing dbt command: {str(e)}")]
+        return [TextContent(type="text", text=f"Error executing dbt command: {str(e)}", isError=True)]

@@ -1,8 +1,5 @@
 """
-Prompt management for fsc-dbt-mcp server.
-
-Provides a simple interface to load prompt content from markdown files,
-following the same pattern as dbt-labs/dbt-mcp.
+Prompt management for data-discovery server. Allows tool descriptions to be loaded from markdown files.
 """
 
 from pathlib import Path

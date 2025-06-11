@@ -26,9 +26,9 @@ src_dir = server_dir / "src"
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from fsc_dbt_mcp.tools.discovery import get_model_details_tool, handle_get_model_details, get_description_tool, handle_get_description, get_models_tool, handle_get_models
-from fsc_dbt_mcp.tools.dbt_cli import get_dbt_cli_tools, handle_dbt_cli_tool, is_dbt_cli_tool
-from fsc_dbt_mcp.resources import resource_registry
+from data_discovery.tools.discovery import get_model_details_tool, handle_get_model_details, get_description_tool, handle_get_description, get_models_tool, handle_get_models, get_resources_tool, handle_get_resources
+from data_discovery.tools.dbt_cli import get_dbt_cli_tools, handle_dbt_cli_tool, is_dbt_cli_tool
+from data_discovery.resources import resource_registry
 
 # Configure logging
 logging.basicConfig(
@@ -39,10 +39,11 @@ logger = logging.getLogger(__name__)
 
 
 class ServerConfig:
-    """Server configuration management following MCP best practices."""
+    """Server configuration management."""
     
     def __init__(self):
-        self.debug_mode = os.getenv('DEBUG', 'false').lower() == 'true'
+        self.debug_mode = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
+        self.deployment_mode = os.getenv('DEPLOYMENT_MODE', 'desktop').lower()
         self.max_file_size = int(os.getenv('MAX_FILE_SIZE', '10485760'))  # 10MB
         
     def validate(self):
@@ -56,7 +57,7 @@ def create_server() -> Server:
     config = ServerConfig()
     config.validate()
     
-    server = Server("fsc-dbt-mcp")
+    server = Server("data-discovery")
     
     @server.list_resources()
     async def list_resources() -> List[types.Resource]:
@@ -93,10 +94,14 @@ def create_server() -> Server:
             tools.append(get_model_details_tool())
             tools.append(get_description_tool())
             tools.append(get_models_tool())
+            tools.append(get_resources_tool())
             
             # Add dbt CLI tools
-            dbt_tools = get_dbt_cli_tools()
-            tools.extend(dbt_tools)
+            # dbt_tools = get_dbt_cli_tools()
+            # tools.extend(dbt_tools)
+
+            # disable dbt tools for now as they have not been migrated to multi-project
+            dbt_tools = []
             
             logger.info(f"Listed {len(tools)} total tools ({len(dbt_tools)} dbt CLI tools)")
             return tools
@@ -107,31 +112,47 @@ def create_server() -> Server:
     @server.call_tool()
     async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         """Handle tool calls with comprehensive error handling."""
+        logger.debug(f"[SERVER] call_tool invoked - name='{name}', arguments={arguments}")
+        
         try:
             # Input validation
             if not name:
+                logger.debug(f"[SERVER] Tool name validation failed - empty name")
                 raise ValueError("Tool name cannot be empty")
             
             if not isinstance(arguments, dict):
+                logger.debug(f"[SERVER] Arguments validation failed - not dict: {type(arguments)}")
                 raise ValueError("Arguments must be a dictionary")
             
+            logger.debug(f"[SERVER] Input validation passed for tool '{name}'")
+            
             # Route to appropriate tool handler
+            logger.debug(f"[SERVER] Routing to tool handler for '{name}'")
+            
             if name == "get_model_details":
+                logger.debug(f"[SERVER] Calling handle_get_model_details with args: {arguments}")
                 return await handle_get_model_details(arguments)
             elif name == "get_description":
+                logger.debug(f"[SERVER] Calling handle_get_description with args: {arguments}")
                 return await handle_get_description(arguments)
             elif name == "get_models":
+                logger.debug(f"[SERVER] Calling handle_get_models with args: {arguments}")
                 return await handle_get_models(arguments)
+            elif name == "get_resources":
+                logger.debug(f"[SERVER] Calling handle_get_resources with args: {arguments}")
+                return await handle_get_resources(arguments)
             elif is_dbt_cli_tool(name):
+                logger.debug(f"[SERVER] Calling dbt CLI tool handler for '{name}' with args: {arguments}")
                 return await handle_dbt_cli_tool(name, arguments)
             else:
+                logger.debug(f"[SERVER] Unknown tool name: '{name}'")
                 raise ValueError(f"Unknown tool: {name}")
                 
         except (ValueError, FileNotFoundError) as e:
-            logger.error(f"Error in tool '{name}': {e}")
+            logger.error(f"[SERVER] Error in tool '{name}': {e}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error in tool '{name}': {e}")
+            logger.error(f"[SERVER] Unexpected error in tool '{name}': {e}")
             raise RuntimeError(f"Internal error: {str(e)}")
     
     return server
@@ -140,15 +161,15 @@ def create_server() -> Server:
 async def main() -> int:
     """Main entry point for the FSC dbt MCP server."""
     try:
-        logger.info("Starting FSC dbt MCP server")
+        logger.info("Starting data-discovery server")
         
         # Create and configure server
         server = create_server()
         
         # Initialize server options
         init_options = InitializationOptions(
-            server_name="fsc-dbt-mcp",
-            server_version="0.1.0",
+            server_name="data-discovery",
+            server_version="0.2.0",
             capabilities=server.get_capabilities(
                 notification_options=NotificationOptions(),
                 experimental_capabilities={}
