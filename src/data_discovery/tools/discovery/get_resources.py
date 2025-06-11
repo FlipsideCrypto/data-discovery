@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 from mcp.types import Tool, TextContent
 import logging
 
-from fsc_dbt_mcp.prompts import get_prompt
+from data_discovery.prompts import get_prompt
 from .utils import create_no_artifacts_error
 from .properties import ToolPropertySet, SHOW_DETAILS, BLOCKCHAIN_FILTER, CATEGORY_FILTER
 
@@ -163,7 +163,7 @@ async def handle_get_resources(arguments: Dict[str, Any]) -> list[TextContent]:
         # Get all available resources from project manager
         try:
             # Get a list of all project IDs and fetch their data
-            from fsc_dbt_mcp.resources import resource_registry
+            from data_discovery.resources import resource_registry
             project_ids = resource_registry.list_project_ids()
             
             if not project_ids:

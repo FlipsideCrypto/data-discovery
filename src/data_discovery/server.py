@@ -26,9 +26,9 @@ src_dir = server_dir / "src"
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from fsc_dbt_mcp.tools.discovery import get_model_details_tool, handle_get_model_details, get_description_tool, handle_get_description, get_models_tool, handle_get_models, get_resources_tool, handle_get_resources
-from fsc_dbt_mcp.tools.dbt_cli import get_dbt_cli_tools, handle_dbt_cli_tool, is_dbt_cli_tool
-from fsc_dbt_mcp.resources import resource_registry
+from data_discovery.tools.discovery import get_model_details_tool, handle_get_model_details, get_description_tool, handle_get_description, get_models_tool, handle_get_models, get_resources_tool, handle_get_resources
+from data_discovery.tools.dbt_cli import get_dbt_cli_tools, handle_dbt_cli_tool, is_dbt_cli_tool
+from data_discovery.resources import resource_registry
 
 # Configure logging
 logging.basicConfig(

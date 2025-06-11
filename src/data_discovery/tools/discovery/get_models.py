@@ -7,8 +7,8 @@ from typing import Dict, Any, List, Optional
 from mcp.types import Tool, TextContent
 import logging
 
-from fsc_dbt_mcp.prompts import get_prompt
-from fsc_dbt_mcp.project_manager import project_manager
+from data_discovery.prompts import get_prompt
+from data_discovery.project_manager import project_manager
 from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error, get_available_resources
 from .properties import ToolPropertySet, SCHEMA_FILTER, LEVEL_FILTER, STANDARD_RESOURCE_ID, STANDARD_LIMIT
 
@@ -127,7 +127,7 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
                 logger.debug(f"[GET_MODELS] Using resource list: {requested_resources}")
         else:
             # Get available resources if none specified, but respect MAX_PROJECTS limit
-            from fsc_dbt_mcp.resources import resource_registry
+            from data_discovery.resources import resource_registry
             
             all_resources = resource_registry.list_project_ids()
             max_projects = project_manager.config.MAX_PROJECTS

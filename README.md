@@ -1,13 +1,17 @@
-# FSC dbt MCP Server dba `data-discovery`
+# Data Discovery MCP Server
 
 Model Context Protocol (MCP) server for dbt project discovery. Query Flipside dbt models through any MCP-enabled client.
 
 ## 🚀 Quickstart
 
+### Prerequisites
+- Python 3.10 or higher
+- Git
+
 1. **Install**:
    ```bash
    git clone <repo-url>
-   cd fsc-dbt-mcp
+   cd data-discovery
    pip install -e .
    ```
 
@@ -18,7 +22,7 @@ Configure a local MCP Server for Claude desktop with the following parameters. S
      "mcpServers": {
        "data-discovery": {
          "command": "python",
-         "args": ["/absolute/path/to/fsc-dbt-mcp/src/fsc_dbt_mcp/server.py"],
+         "args": ["/absolute/path/to/src/data_discovery/server.py"],
          "env": {
            "DEPLOYMENT_MODE": "desktop"
          }
@@ -52,7 +56,7 @@ Currently disabled pending multi-project migration:
 - `DBT_PATH` - Full path to dbt executable (not necessary as all `dbt_cli` tools are disabled and will probably be deprecated)
 
 ### Deployment Modes
-- **`desktop`** (recommended): Uses `~/.cache/fsc-dbt-mcp/` for cache
+- **`desktop`** (recommended): Uses `~/.cache/data-discovery/` for cache
 - **`local`**: Uses `target/` directory (development only)
 
 ## Troubleshooting
@@ -68,7 +72,7 @@ Currently disabled pending multi-project migration:
 
 ### Test Server
 ```bash
-python src/fsc_dbt_mcp/server.py
+python src/data_discovery/server.py
 ```
 
 ## Technical Details

@@ -9,8 +9,8 @@ from typing import Dict, Any, Optional, Tuple
 from mcp.types import Tool, TextContent
 import logging
 
-from fsc_dbt_mcp.prompts import get_prompt
-from fsc_dbt_mcp.project_manager import project_manager
+from data_discovery.prompts import get_prompt
+from data_discovery.project_manager import project_manager
 from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error
 from .properties import ToolPropertySet, UNIQUE_ID, MODEL_NAME, TABLE_NAME, STANDARD_RESOURCE_ID
 

@@ -91,7 +91,7 @@ class ResourceIdProperty(ToolProperty):
     def _validate_resource_exists(self, resource_id: str) -> None:
         """Validate that resource_id exists in the resource registry."""
         # Import here to avoid circular imports
-        from fsc_dbt_mcp.resources import resource_registry
+        from data_discovery.resources import resource_registry
         
         available_resources = resource_registry.list_project_ids()
         if resource_id not in available_resources:

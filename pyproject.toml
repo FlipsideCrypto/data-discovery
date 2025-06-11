@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "data-discovery"
-description = "data-discovery Server - dbt CLI tools and discovery functionality"
+description = "MCP server for dbt project discovery across blockchain datasets"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 version = "0.2.0"
 authors = [
     { name = "forgxyz" },
@@ -14,19 +14,18 @@ authors = [
 dependencies = [
     "mcp==1.9.3",
     "aiohttp>=3.8.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.scripts]
-fsc-dbt-mcp = "fsc_dbt_mcp.server:main"
+data-discovery = "data_discovery.server:main"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0"
 ]
-github = [
-    "aiohttp>=3.8.0"
-]
+github = []
 
 [tool.uv]
 dev-dependencies = []

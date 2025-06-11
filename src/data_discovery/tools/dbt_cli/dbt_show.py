@@ -7,7 +7,7 @@ from typing import Dict, Any, List
 from mcp.types import Tool, TextContent
 import logging
 
-from fsc_dbt_mcp.prompts import get_prompt
+from data_discovery.prompts import get_prompt
 from .utils import run_dbt_command
 
 logger = logging.getLogger(__name__)

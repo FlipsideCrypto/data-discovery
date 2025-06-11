@@ -3,10 +3,9 @@
     "data-discovery": {
       "command": "python",
       "args": [
-        "/path/to/fsc-dbt-mcp/src/fsc_dbt_mcp/server.py"
+        "/absolute/path/to/src/data-discovery/server.py"
       ],
       "env": {
-        "DBT_PATH": "/path/to/your/dbt/executable",
         "DEBUG_MODE": "false",
         "DEPLOYMENT_MODE": "desktop"
       }
