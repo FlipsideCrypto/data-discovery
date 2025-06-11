@@ -20,13 +20,6 @@ from mcp.server.models import InitializationOptions
 from mcp import stdio_server, types
 from mcp.types import TextContent
 
-# Configure debug logging based on environment variable
-DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes', 'on')
-if DEBUG_MODE:
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-else:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
 # Add the src directory to the Python path for absolute imports
 server_dir = Path(__file__).parent.parent.parent
 src_dir = server_dir / "src"
@@ -46,10 +39,11 @@ logger = logging.getLogger(__name__)
 
 
 class ServerConfig:
-    """Server configuration management following MCP best practices."""
+    """Server configuration management."""
     
     def __init__(self):
-        self.debug_mode = os.getenv('DEBUG', 'false').lower() == 'true'
+        self.debug_mode = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
+        self.deployment_mode = os.getenv('DEPLOYMENT_MODE', 'desktop').lower()
         self.max_file_size = int(os.getenv('MAX_FILE_SIZE', '10485760'))  # 10MB
         
     def validate(self):
@@ -167,15 +161,15 @@ def create_server() -> Server:
 async def main() -> int:
     """Main entry point for the FSC dbt MCP server."""
     try:
-        logger.info("Starting FSC dbt MCP server")
+        logger.info("Starting data-discovery server")
         
         # Create and configure server
         server = create_server()
         
         # Initialize server options
         init_options = InitializationOptions(
-            server_name="fsc-dbt-mcp",
-            server_version="0.1.0",
+            server_name="data-discovery",
+            server_version="0.2.0",
             capabilities=server.get_capabilities(
                 notification_options=NotificationOptions(),
                 experimental_capabilities={}

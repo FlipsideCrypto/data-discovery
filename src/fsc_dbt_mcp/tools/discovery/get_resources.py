@@ -189,7 +189,8 @@ async def handle_get_resources(arguments: Dict[str, Any]) -> list[TextContent]:
             logger.debug(f"[GET_RESOURCES] Resource loading failed: {e}")
             return [TextContent(
                 type="text",
-                text="Failed to load available resources"
+                text="Failed to load available resources",
+                isError=True
             )]
         
         # Apply filters
@@ -271,5 +272,6 @@ async def handle_get_resources(arguments: Dict[str, Any]) -> list[TextContent]:
         logger.error(f"Unexpected error in get_resources: {e}")
         return [TextContent(
             type="text",
-            text="Internal error retrieving resources"
+            text="Internal error retrieving resources",
+            isError=True
         )]

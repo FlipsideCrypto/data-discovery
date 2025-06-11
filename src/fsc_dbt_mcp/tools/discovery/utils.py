@@ -126,7 +126,7 @@ def create_error_response(message: str, include_available_resources: bool = True
     else:
         full_message = message
     
-    result = [TextContent(type="text", text=full_message)]
+    result = [TextContent(type="text", text=full_message, isError=True)]
     logger.debug(f"[UTILS] create_error_response returning: {type(result)} with {len(result)} items")
     return result
 
@@ -137,7 +137,7 @@ def create_resource_not_found_error(identifier: str, resource_info: str = "",
     available_resources = get_available_resources()
     resource_suffix = resource_info if resource_info else " in any available resources"
     message = f"{item_type.title()} '{identifier}' not found{resource_suffix}. Available resources: {available_resources}"
-    return [TextContent(type="text", text=message)]
+    return [TextContent(type="text", text=message, isError=True)]
 
 
 def create_no_artifacts_error() -> list[TextContent]:

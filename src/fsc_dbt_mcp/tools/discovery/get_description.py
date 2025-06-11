@@ -27,7 +27,11 @@ def get_description_tool() -> Tool:
     return Tool(
         name="get_description",
         description=get_prompt("discovery/get_description"),
-        inputSchema=_tool_properties.get_input_schema(required_properties=["resource_id"])
+        inputSchema=_tool_properties.get_input_schema(required_properties=["resource_id"]),
+        annotations={
+            "title": "Get Documentation",
+            "readOnlyHint": True
+        }
     )
 
 
@@ -46,7 +50,8 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
             logger.debug(f"[GET_DESC] resource_id is required but was not provided")
             return [TextContent(
                 type="text",
-                text="resource_id is required for get_description to avoid cross-contamination of blockchain-specific documentation. Please specify which project(s) to search"
+                text="resource_id is required for get_description to avoid cross-contamination of blockchain-specific documentation. Please specify which project(s) to search",
+                isError=True
             )]
         
         # Load project artifacts
@@ -126,17 +131,20 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
         logger.error(f"File not found in get_description: {e}")
         return [TextContent(
             type="text",
-            text=f"Required dbt artifacts not found: {str(e)}"
+            text=f"Required dbt artifacts not found: {str(e)}",
+            isError=True
         )]
     except ValueError as e:
         logger.error(f"Invalid input in get_description: {e}")
         return [TextContent(
             type="text",
-            text=f"Invalid input: {str(e)}"
+            text=f"Invalid input: {str(e)}",
+            isError=True
         )]
     except Exception as e:
         logger.error(f"Unexpected error in get_description: {e}")
         return [TextContent(
             type="text",
-            text=f"Internal error retrieving description: {str(e)}"
+            text=f"Internal error retrieving description: {str(e)}",
+            isError=True
         )]

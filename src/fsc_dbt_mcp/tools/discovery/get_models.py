@@ -126,9 +126,17 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
                 requested_resources = resource_id
                 logger.debug(f"[GET_MODELS] Using resource list: {requested_resources}")
         else:
-            # Get all available resources if none specified
+            # Get available resources if none specified, but respect MAX_PROJECTS limit
             from fsc_dbt_mcp.resources import resource_registry
-            requested_resources = resource_registry.list_project_ids()
+            
+            all_resources = resource_registry.list_project_ids()
+            max_projects = project_manager.config.MAX_PROJECTS
+            
+            if len(all_resources) > max_projects:
+                # If there are too many resources, require explicit specification
+                raise ValueError(f"Too many resources available ({len(all_resources)}). Please specify resource_id to search specific projects, or use schema/level filters. Available resources: {all_resources[:10]}{'...' if len(all_resources) > 10 else ''}")
+            
+            requested_resources = all_resources
             logger.debug(f"[GET_MODELS] No resource_id specified, using all available: {requested_resources}")
         
         # Load artifacts one by one to handle failures gracefully
@@ -275,17 +283,20 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
         logger.error(f"[GET_MODELS] File not found error: {e}")
         return [TextContent(
             type="text",
-            text=f"Required dbt artifacts not found: {str(e)}"
+            text=f"Required dbt artifacts not found: {str(e)}",
+            isError=True
         )]
     except ValueError as e:
         logger.error(f"[GET_MODELS] Validation error: {e}")
         return [TextContent(
             type="text",
-            text=f"Invalid input: {str(e)}"
+            text=f"Invalid input: {str(e)}",
+            isError=True
         )]
     except Exception as e:
         logger.error(f"[GET_MODELS] Unexpected error: {e}")
         return [TextContent(
             type="text",
-            text=f"Internal error retrieving models: {str(e)}"
+            text=f"Internal error retrieving models: {str(e)}",
+            isError=True
         )]

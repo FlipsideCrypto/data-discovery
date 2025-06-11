@@ -50,12 +50,20 @@ class ResourceIdProperty(ToolProperty):
         )
         
         return {
-            "type": ["string", "array"],
-            "description": self.description or default_description,
-            "not": {"type": ["boolean", "null"]},
-            "items": {
-                "type": "string"
-            }
+            "oneOf": [
+                {
+                    "type": "string",
+                    "description": "Single resource ID (e.g., 'bitcoin-models')"
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Array of resource IDs (e.g., ['bitcoin-models', 'ethereum-models'])"
+                }
+            ],
+            "description": self.description or default_description
         }
     
     def _validate_string(self, value: str, arg_name: str, allow_empty: bool = False) -> str:
@@ -74,25 +82,38 @@ class ResourceIdProperty(ToolProperty):
         
         return value
     
+    def _validate_resource_exists(self, resource_id: str) -> None:
+        """Validate that resource_id exists in the resource registry."""
+        # Import here to avoid circular imports
+        from fsc_dbt_mcp.resources import resource_registry
+        
+        available_resources = resource_registry.list_project_ids()
+        if resource_id not in available_resources:
+            raise ValueError(f"Unknown resource_id '{resource_id}'. Available resources: {available_resources}")
+    
     def validate_and_extract(self, arguments: Dict[str, Any]) -> Optional[Union[str, List[str]]]:
         """Validate and extract resource_id from arguments."""
         resource_id = arguments.get("resource_id")
-
-        # Check if passed as a boolean, None or null and set to None
-        if isinstance(resource_id, bool) or resource_id is None or resource_id == "null" or resource_id == "true" or resource_id == "false":
-            resource_id = None
         
-        # Check if required but missing
-        if self.required and resource_id is None:
-            raise ValueError("resource_id is required for this operation")
+        # Check for invalid types that should be rejected
+        if isinstance(resource_id, bool):
+            raise ValueError("resource_id cannot be a boolean. Use a string or array of strings instead.")
         
-        # Return None if not provided (for optional resource_id)
+        if resource_id == "null" or resource_id == "true" or resource_id == "false":
+            raise ValueError("resource_id cannot be 'null', 'true', or 'false'. Use a valid project ID string or omit the parameter.")
+        
+        # Handle None case (parameter not provided)
         if resource_id is None:
+            if self.required:
+                raise ValueError("resource_id is required for this operation")
             return None
         
         # Validate string resource_id
         if isinstance(resource_id, str):
-            return self._validate_string(resource_id, "resource_id")
+            validated_id = self._validate_string(resource_id, "resource_id")
+            # Check if resource exists in registry
+            self._validate_resource_exists(validated_id)
+            return validated_id
         
         # Validate array resource_id
         if isinstance(resource_id, list):
@@ -104,7 +125,10 @@ class ResourceIdProperty(ToolProperty):
             for i, item in enumerate(resource_id):
                 if not isinstance(item, str):
                     raise ValueError(f"resource_id array item {i} must be a string")
-                validated_array.append(self._validate_string(item, f"resource_id[{i}]"))
+                validated_item = self._validate_string(item, f"resource_id[{i}]")
+                # Check if resource exists in registry
+                self._validate_resource_exists(validated_item)
+                validated_array.append(validated_item)
             
             return validated_array
         
@@ -327,7 +351,7 @@ class ToolPropertySet:
         schema = {
             "type": "object",
             "properties": {},
-            "additionalProperties": False
+            "additionalProperties": True
         }
         
         # Add property schemas

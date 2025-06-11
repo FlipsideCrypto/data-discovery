@@ -7,8 +7,8 @@
       ],
       "env": {
         "DBT_PATH": "/path/to/your/dbt/executable",
-        "DBT_PROJECT_DIR": "/path/to/your/dbt/project",
-        "DEBUG": "false"
+        "DEBUG_MODE": "false",
+        "DEPLOYMENT_MODE": "desktop"
       }
     }
   }

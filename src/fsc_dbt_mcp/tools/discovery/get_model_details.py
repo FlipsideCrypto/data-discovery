@@ -362,7 +362,8 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
                 logger.debug(f"[GET_MODEL] Project validation failed for unique_id: {e}")
                 return [TextContent(
                     type="text",
-                    text=f"Invalid unique_id: {str(e)}"
+                    text=f"Invalid unique_id: {str(e)}",
+                    isError=True
                 )]
         
         # Multi-project search (when model_name provided or unique_id lookup failed)
@@ -420,17 +421,20 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
         logger.error(f"File not found in get_model_details: {e}")
         return [TextContent(
             type="text",
-            text=f"Required dbt artifacts not found: {str(e)}"
+            text=f"Required dbt artifacts not found: {str(e)}",
+            isError=True
         )]
     except ValueError as e:
         logger.error(f"Invalid input in get_model_details: {e}")
         return [TextContent(
             type="text",
-            text=f"Invalid input: {str(e)}"
+            text=f"Invalid input: {str(e)}",
+            isError=True
         )]
     except Exception as e:
         logger.error(f"Unexpected error in get_model_details: {e}")
         return [TextContent(
             type="text",
-            text=f"Internal error retrieving model details: {str(e)}"
+            text=f"Internal error retrieving model details: {str(e)}",
+            isError=True
         )]

@@ -25,7 +25,7 @@ class ProjectManagerConfig:
         self.MAX_PROJECTS = int(os.getenv('MAX_PROJECTS', '5'))
         self.DEPLOYMENT_MODE = os.getenv('DEPLOYMENT_MODE', 'local').lower()
         self.CACHE_DIR = os.getenv('CACHE_DIR', self._get_default_cache_dir())
-        self.CACHE_TTL_SECONDS = int(os.getenv('CACHE_TTL_SECONDS', '3600'))  # 1 hour
+        self.CACHE_TTL_SECONDS = int(os.getenv('CACHE_TTL_SECONDS', '86400'))  # 24 hours
         self.MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', '52428800'))  # 50MB
     
     def _get_default_cache_dir(self) -> str:
@@ -343,6 +343,8 @@ class ProjectManager:
     
     async def get_project_artifacts(self, resource_ids: Union[str, List[str]]) -> Dict[str, Tuple[Dict[str, Any], Dict[str, Any]]]:
         """Get manifest and catalog artifacts for specified resources."""
+        # Validate resource IDs first - this will raise on invalid input
+        # Do NOT continue processing if validation fails
         resource_ids = self._validate_resource_ids(resource_ids)
         
         # If no resource IDs specified (empty list), load all available resources
@@ -391,7 +393,10 @@ class ProjectManager:
     async def find_model_in_projects(self, model_name: str, resource_ids: Optional[Union[str, List[str]]] = None) -> List[Dict[str, Any]]:
         """Find model across specified resources or all resources."""
         if resource_ids is None:
-            resource_ids = resource_registry.list_project_ids()
+            all_resources = resource_registry.list_project_ids()
+            if len(all_resources) > self.config.MAX_PROJECTS:
+                raise ValueError(f"Too many resources available ({len(all_resources)}). Please specify resource_id to search specific projects. Available resources: {all_resources[:10]}{'...' if len(all_resources) > 10 else ''}")
+            resource_ids = all_resources
             logger.info(f"No resource_ids specified for model search, using all available resources: {resource_ids}")
         
         resource_ids = self._validate_resource_ids(resource_ids)
