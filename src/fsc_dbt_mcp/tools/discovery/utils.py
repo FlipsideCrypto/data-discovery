@@ -13,6 +13,11 @@ from mcp.types import TextContent
 
 logger = logging.getLogger(__name__)
 
+# Enable debug logging if environment variable is set
+DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes', 'on')
+if DEBUG_MODE:
+    logger.setLevel(logging.DEBUG)
+
 
 def _validate_file_path(file_path: str) -> Path:
     """Validate and normalize file path for security."""
@@ -110,19 +115,24 @@ def get_available_resources() -> List[str]:
     return resource_registry.list_project_ids()
 
 
-def create_error_response(message: str, include_available_resources: bool = True) -> List[TextContent]:
+def create_error_response(message: str, include_available_resources: bool = True) -> list[TextContent]:
     """Create a standardized error response with optional available resources list."""
+    logger.debug(f"[UTILS] create_error_response called with message: {message}, include_resources: {include_available_resources}")
+    
     if include_available_resources:
         available_resources = get_available_resources()
         full_message = f"{message}. Available resources: {available_resources}"
+        logger.debug(f"[UTILS] Added available resources to message")
     else:
         full_message = message
     
-    return [TextContent(type="text", text=full_message)]
+    result = [TextContent(type="text", text=full_message)]
+    logger.debug(f"[UTILS] create_error_response returning: {type(result)} with {len(result)} items")
+    return result
 
 
 def create_resource_not_found_error(identifier: str, resource_info: str = "", 
-                                  item_type: str = "item") -> List[TextContent]:
+                                  item_type: str = "item") -> list[TextContent]:
     """Create a standardized 'not found' error with available resources."""
     available_resources = get_available_resources()
     resource_suffix = resource_info if resource_info else " in any available resources"
@@ -130,11 +140,11 @@ def create_resource_not_found_error(identifier: str, resource_info: str = "",
     return [TextContent(type="text", text=message)]
 
 
-def create_no_artifacts_error() -> List[TextContent]:
+def create_no_artifacts_error() -> list[TextContent]:
     """Create a standardized 'no artifacts loaded' error with available resources."""
     return create_error_response("No resource artifacts could be loaded")
 
-
+# TODO - migrate 
 def validate_string_argument(value: Any, arg_name: str, allow_empty: bool = False) -> str:
     """Validate and sanitize string arguments with common security checks."""
     if not isinstance(value, str):
@@ -154,6 +164,86 @@ def validate_string_argument(value: Any, arg_name: str, allow_empty: bool = Fals
 
 def normalize_null_to_none(value: Any) -> Any:
     """Normalize null/undefined values to None for consistent handling."""
-    if value is None or value == "null" or (isinstance(value, str) and value.lower() == "null"):
+    if value is None or value == "null" or (isinstance(value, str) and value.lower() == "null") or type(value) == bool:
         return None
     return value
+
+# TODO - migrate resource validation to ResourceIdProperty class
+def validate_resource_id(resource_id: Any, required: bool = False) -> Optional[Any]:
+    """Validate and normalize resource_id parameter with consistent handling across tools.
+    
+    Args:
+        resource_id: The resource_id value to validate (can be string or array of strings)
+        required: Whether resource_id is required for this tool
+        
+    Returns:
+        Normalized resource_id value or None
+        
+    Raises:
+        ValueError: If resource_id is invalid or required but missing
+    """
+    # Normalize null values first
+    resource_id = normalize_null_to_none(resource_id)
+    
+    # Check if required but missing
+    if required and resource_id is None:
+        raise ValueError("resource_id is required for this operation")
+    
+    # Return None if not provided (for optional resource_id)
+    if resource_id is None:
+        return None
+    
+    # Validate string resource_id
+    if isinstance(resource_id, str):
+        return validate_string_argument(resource_id, "resource_id")
+    
+    # Validate array resource_id
+    if isinstance(resource_id, list):
+        if len(resource_id) == 0:
+            return None  # Empty array treated as None
+        
+        # Validate each item in array
+        validated_array = []
+        for i, item in enumerate(resource_id):
+            if not isinstance(item, str):
+                raise ValueError(f"resource_id array item {i} must be a string")
+            validated_array.append(validate_string_argument(item, f"resource_id[{i}]"))
+        
+        return validated_array
+    
+    # Invalid type
+    raise ValueError("resource_id must be a string or array of strings")
+
+# TODO - migrate argument validation to ToolPropertySet class
+def validate_arguments_dict(arguments: Any) -> Dict[str, Any]:
+    """Validate that arguments is a dictionary."""
+    if not isinstance(arguments, dict):
+        raise ValueError("Arguments must be a dictionary")
+    return arguments
+
+
+def create_input_schema_for_resource_id(required: bool = False, description: str = None) -> Dict[str, Any]:
+    """Create standardized input schema for resource_id parameter.
+    
+    Args:
+        required: Whether resource_id should be required
+        description: Custom description for resource_id (uses default if None)
+        
+    Returns:
+        Dictionary with resource_id schema definition
+    """
+    default_description = (
+        "Resource ID(s) to search in. Can be a single resource ID string or array "
+        "of resource IDs (max 5). Resource_id is the ID of a resource returned by "
+        "get_resources(). Example: 'blockchain-models'"
+    )
+    
+    return {
+        "type": ["string", "array"],
+        "description": description or default_description,
+        "not": {"type": ["boolean", "null"]},
+        "items": {
+            "type": "string"
+        },
+        "maxItems": 5
+    }

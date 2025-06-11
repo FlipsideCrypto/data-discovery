@@ -7,9 +7,17 @@ from mcp.types import Tool, TextContent
 import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
-from .utils import create_error_response, create_no_artifacts_error
+from .utils import create_no_artifacts_error
+from .properties import ToolPropertySet, SHOW_DETAILS, BLOCKCHAIN_FILTER, CATEGORY_FILTER
 
 logger = logging.getLogger(__name__)
+
+# Define tool properties
+_tool_properties = ToolPropertySet({
+    "show_details": SHOW_DETAILS,
+    "blockchain_filter": BLOCKCHAIN_FILTER,
+    "category_filter": CATEGORY_FILTER
+})
 
 
 def get_resources_tool() -> Tool:
@@ -17,25 +25,7 @@ def get_resources_tool() -> Tool:
     return Tool(
         name="get_resources",
         description=get_prompt("discovery/get_resources"),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "show_details": {
-                    "type": "boolean",
-                    "description": "Include detailed information like schemas, aliases, and artifact locations (default: false)",
-                    "default": False
-                },
-                "blockchain_filter": {
-                    "type": "string",
-                    "description": "Filter resources by blockchain name or alias (e.g., 'ethereum', 'eth', 'bitcoin', 'btc', 'polygon', 'matic')"
-                },
-                "category_filter": {
-                    "type": "string",
-                    "description": "Filter resources by category (e.g., 'evm', 'l1', 'svm', 'multi-chain', 'internal')"
-                }
-            },
-            "additionalProperties": False
-        }
+        inputSchema=_tool_properties.get_input_schema()
     )
 
 
@@ -162,10 +152,13 @@ def _format_resource_detailed(resource: Dict[str, Any]) -> List[str]:
 async def handle_get_resources(arguments: Dict[str, Any]) -> list[TextContent]:
     """Handle the get_resources tool invocation."""
     try:
-        # Extract arguments
-        show_details = arguments.get("show_details", False)
-        blockchain_filter = arguments.get("blockchain_filter")
-        category_filter = arguments.get("category_filter")
+        # Validate and extract all arguments using properties
+        logger.debug(f"[GET_RESOURCES] Called with arguments: {arguments}")
+        params = _tool_properties.validate_and_extract_all(arguments)
+        show_details = params["show_details"]
+        blockchain_filter = params["blockchain_filter"]
+        category_filter = params["category_filter"]
+        logger.debug(f"[GET_RESOURCES] Extracted params - show_details: {show_details}, blockchain_filter: {blockchain_filter}, category_filter: {category_filter}")
         
         # Get all available resources from project manager
         try:
@@ -174,6 +167,7 @@ async def handle_get_resources(arguments: Dict[str, Any]) -> list[TextContent]:
             project_ids = resource_registry.list_project_ids()
             
             if not project_ids:
+                logger.debug(f"[GET_RESOURCES] No project IDs found")
                 return create_no_artifacts_error()
             
             # Get detailed data for each project
@@ -187,14 +181,21 @@ async def handle_get_resources(arguments: Dict[str, Any]) -> list[TextContent]:
                     continue
             
             if not all_resources:
+                logger.debug(f"[GET_RESOURCES] No resources loaded successfully")
                 return create_no_artifacts_error()
             
         except Exception as e:
             logger.error(f"Failed to load resources: {e}")
-            return create_error_response("Failed to load available resources")
+            logger.debug(f"[GET_RESOURCES] Resource loading failed: {e}")
+            return [TextContent(
+                type="text",
+                text="Failed to load available resources"
+            )]
         
         # Apply filters
+        logger.debug(f"[GET_RESOURCES] Applying filters to {len(all_resources)} resources")
         filtered_resources, is_partial_blockchain_match, blockchain_suggestions = _filter_resources(all_resources, blockchain_filter, category_filter)
+        logger.debug(f"[GET_RESOURCES] Filtered to {len(filtered_resources)} resources")
         
         # Build response
         response_lines = ["# Available dbt Resources"]
@@ -268,4 +269,7 @@ async def handle_get_resources(arguments: Dict[str, Any]) -> list[TextContent]:
         
     except Exception as e:
         logger.error(f"Unexpected error in get_resources: {e}")
-        return create_error_response("Internal error retrieving resources")
+        return [TextContent(
+            type="text",
+            text="Internal error retrieving resources"
+        )]

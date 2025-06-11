@@ -20,6 +20,13 @@ from mcp.server.models import InitializationOptions
 from mcp import stdio_server, types
 from mcp.types import TextContent
 
+# Configure debug logging based on environment variable
+DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes', 'on')
+if DEBUG_MODE:
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+else:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 # Add the src directory to the Python path for absolute imports
 server_dir = Path(__file__).parent.parent.parent
 src_dir = server_dir / "src"
@@ -111,33 +118,47 @@ def create_server() -> Server:
     @server.call_tool()
     async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         """Handle tool calls with comprehensive error handling."""
+        logger.debug(f"[SERVER] call_tool invoked - name='{name}', arguments={arguments}")
+        
         try:
             # Input validation
             if not name:
+                logger.debug(f"[SERVER] Tool name validation failed - empty name")
                 raise ValueError("Tool name cannot be empty")
             
             if not isinstance(arguments, dict):
+                logger.debug(f"[SERVER] Arguments validation failed - not dict: {type(arguments)}")
                 raise ValueError("Arguments must be a dictionary")
             
+            logger.debug(f"[SERVER] Input validation passed for tool '{name}'")
+            
             # Route to appropriate tool handler
+            logger.debug(f"[SERVER] Routing to tool handler for '{name}'")
+            
             if name == "get_model_details":
+                logger.debug(f"[SERVER] Calling handle_get_model_details with args: {arguments}")
                 return await handle_get_model_details(arguments)
             elif name == "get_description":
+                logger.debug(f"[SERVER] Calling handle_get_description with args: {arguments}")
                 return await handle_get_description(arguments)
             elif name == "get_models":
+                logger.debug(f"[SERVER] Calling handle_get_models with args: {arguments}")
                 return await handle_get_models(arguments)
             elif name == "get_resources":
+                logger.debug(f"[SERVER] Calling handle_get_resources with args: {arguments}")
                 return await handle_get_resources(arguments)
             elif is_dbt_cli_tool(name):
+                logger.debug(f"[SERVER] Calling dbt CLI tool handler for '{name}' with args: {arguments}")
                 return await handle_dbt_cli_tool(name, arguments)
             else:
+                logger.debug(f"[SERVER] Unknown tool name: '{name}'")
                 raise ValueError(f"Unknown tool: {name}")
                 
         except (ValueError, FileNotFoundError) as e:
-            logger.error(f"Error in tool '{name}': {e}")
+            logger.error(f"[SERVER] Error in tool '{name}': {e}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error in tool '{name}': {e}")
+            logger.error(f"[SERVER] Unexpected error in tool '{name}': {e}")
             raise RuntimeError(f"Internal error: {str(e)}")
     
     return server

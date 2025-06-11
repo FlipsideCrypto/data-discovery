@@ -2,15 +2,30 @@
 get_models tool for retrieving dbt models with filtering by schema or medallion level.
 Supports multi-project operations with project-aware functionality.
 """
+import os
 from typing import Dict, Any, List, Optional
 from mcp.types import Tool, TextContent
 import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
 from fsc_dbt_mcp.project_manager import project_manager
-from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error, validate_string_argument, get_available_resources, normalize_null_to_none
+from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error, get_available_resources
+from .properties import ToolPropertySet, SCHEMA_FILTER, LEVEL_FILTER, STANDARD_RESOURCE_ID, STANDARD_LIMIT
 
 logger = logging.getLogger(__name__)
+
+# Enable debug logging if environment variable is set
+DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes', 'on')
+if DEBUG_MODE:
+    logger.setLevel(logging.DEBUG)
+
+# Define tool properties using the shared properties system
+_tool_properties = ToolPropertySet({
+    "schema": SCHEMA_FILTER,
+    "level": LEVEL_FILTER,
+    "resource_id": STANDARD_RESOURCE_ID,
+    "limit": STANDARD_LIMIT
+})
 
 
 def get_models_tool() -> Tool:
@@ -18,74 +33,29 @@ def get_models_tool() -> Tool:
     return Tool(
         name="get_models",
         description=get_prompt("discovery/get_models"),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "schema": {
-                    "type": "string",
-                    "description": "Filter models by schema name (e.g., 'core', 'defi', 'nft'). Takes precedence over level if both are provided."
-                },
-                "level": {
-                    "type": "string",
-                    "description": "Filter models by medallion level (bronze, silver, gold). Ignored if schema is provided.",
-                    "enum": ["bronze", "silver", "gold"]
-                },
-                "resource_id": {
-                    "type": ["string", "array"],
-                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). Resource_id is the ID of a resource returned by get_resources(). Example: 'blockchain-models'",
-                    "not": {"type": ["boolean", "null"]},
-                    "items": {
-                        "type": "string"
-                    },
-                    "maxItems": 5
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of models to return (default: 25, max: 250)",
-                    "default": 25,
-                    "minimum": 1,
-                    "maximum": 250
-                }
-            },
-            "additionalProperties": False
-        }
+        inputSchema=_tool_properties.get_input_schema()
     )
 
 
 def _validate_models_arguments(arguments: Dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[Any], int]:
     """Validate and extract model filtering arguments."""
-    if not isinstance(arguments, dict):
-        raise ValueError("Arguments must be a dictionary")
+    logger.debug(f"[GET_MODELS] _validate_models_arguments called with: {arguments}")
     
-    schema = arguments.get("schema")
-    level = arguments.get("level") 
-    resource_id = normalize_null_to_none(arguments.get("resource_id"))
+    # Use shared properties for validation
+    params = _tool_properties.validate_and_extract_all(arguments)
+    logger.debug(f"[GET_MODELS] Shared properties validation result: {params}")
     
-    limit = arguments.get("limit", 25)
+    schema = params["schema"]
+    level = params["level"]
+    resource_id = params["resource_id"]
+    limit = params["limit"]
     
     # Require at least one filtering parameter
     if not schema and not level and not resource_id:
+        logger.debug(f"[GET_MODELS] Validation failed - no filtering parameters provided")
         raise ValueError("At least one parameter (schema, level, or resource_id) is required. Use get_resources() to see available options.")
     
-    # Validate schema
-    if schema is not None:
-        schema = validate_string_argument(schema, "schema").lower()
-        
-        # Additional validation for schema (prevent SQL injection attempts)
-        if any(char in schema for char in [';', '--']):
-            raise ValueError("schema contains invalid characters")
-    
-    # Validate level
-    if level is not None:
-        level = validate_string_argument(level, "level").lower()
-        
-        if level not in ['bronze', 'silver', 'gold']:
-            raise ValueError("level must be one of: bronze, silver, gold")
-    
-    # Validate limit
-    if not isinstance(limit, int) or limit < 1 or limit > 250:
-        raise ValueError("limit must be an integer between 1 and 250")
-    
+    logger.debug(f"[GET_MODELS] Validation successful - schema={schema}, level={level}, resource_id={resource_id}, limit={limit}")
     return schema, level, resource_id, limit
 
 
@@ -137,55 +107,76 @@ def _filter_models_by_criteria(models: Dict[str, Any], schema: Optional[str], le
 
 async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
     """Handle the get_models tool invocation."""
+    logger.debug(f"[GET_MODELS] Starting handle_get_models with arguments: {arguments}")
+    
     try:
         # Validate input arguments
+        logger.debug(f"[GET_MODELS] Calling _validate_models_arguments")
         schema, level, resource_id, limit = _validate_models_arguments(arguments)
         
         # Load project artifacts with graceful handling of invalid resources
         requested_resources = []
+        logger.debug(f"[GET_MODELS] Processing resource_id: {resource_id} (type: {type(resource_id)})")
+        
         if resource_id:
             if isinstance(resource_id, str):
                 requested_resources = [resource_id]
+                logger.debug(f"[GET_MODELS] Using single resource: {requested_resources}")
             elif isinstance(resource_id, list):
                 requested_resources = resource_id
+                logger.debug(f"[GET_MODELS] Using resource list: {requested_resources}")
         else:
             # Get all available resources if none specified
             from fsc_dbt_mcp.resources import resource_registry
             requested_resources = resource_registry.list_project_ids()
+            logger.debug(f"[GET_MODELS] No resource_id specified, using all available: {requested_resources}")
         
         # Load artifacts one by one to handle failures gracefully
         successful_artifacts = {}
         failed_resources = []
+        logger.debug(f"[GET_MODELS] Loading artifacts for {len(requested_resources)} resources")
         
         for res_id in requested_resources:
             try:
+                logger.debug(f"[GET_MODELS] Loading artifacts for resource: {res_id}")
                 artifacts = await project_manager.get_project_artifacts([res_id])
                 if artifacts and res_id in artifacts:
                     successful_artifacts[res_id] = artifacts[res_id]
+                    logger.debug(f"[GET_MODELS] Successfully loaded artifacts for: {res_id}")
                 else:
                     failed_resources.append(res_id)
+                    logger.debug(f"[GET_MODELS] No artifacts found for: {res_id}")
             except Exception as e:
-                logger.warning(f"Failed to load artifacts for resource {res_id}: {e}")
+                logger.warning(f"[GET_MODELS] Failed to load artifacts for resource {res_id}: {e}")
                 failed_resources.append(res_id)
         
+        logger.debug(f"[GET_MODELS] Artifact loading complete - successful: {list(successful_artifacts.keys())}, failed: {failed_resources}")
+        
         if not successful_artifacts:
+            logger.debug(f"[GET_MODELS] No successful artifacts loaded")
             if failed_resources:
+                logger.debug(f"[GET_MODELS] Returning error response for failed resources")
                 return create_error_response(f"No valid resources found. Failed resources: {failed_resources}")
             else:
+                logger.debug(f"[GET_MODELS] Returning no artifacts error")
                 return create_no_artifacts_error()
         
         # Collect all filtered models across successfully loaded projects
         all_filtered_models = []
+        logger.debug(f"[GET_MODELS] Starting model filtering across {len(successful_artifacts)} projects")
         
         for proj_id, (manifest, _) in successful_artifacts.items():
+            logger.debug(f"[GET_MODELS] Processing project: {proj_id}")
             # Get all models from manifest
             nodes = manifest.get("nodes", {})
             if not isinstance(nodes, dict):
-                logger.warning(f"Invalid manifest structure in project {proj_id}: 'nodes' is not a dictionary")
+                logger.warning(f"[GET_MODELS] Invalid manifest structure in project {proj_id}: 'nodes' is not a dictionary")
                 continue
             
+            logger.debug(f"[GET_MODELS] Found {len(nodes)} nodes in project {proj_id}")
             # Filter models based on criteria for this project
             project_models = _filter_models_by_criteria(nodes, schema, level, proj_id)
+            logger.debug(f"[GET_MODELS] Filtered to {len(project_models)} models for project {proj_id}")
             all_filtered_models.extend(project_models)
         
         # Sort all models by project, schema, then name
@@ -215,9 +206,12 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
         response_lines.append("")
         
         if not all_filtered_models:
+            logger.debug(f"[GET_MODELS] No models found matching criteria")
             available_resources = get_available_resources()
             response_lines.append(f"No models found matching the specified criteria. Available resources: {available_resources}")
-            return [TextContent(type="text", text="\n".join(response_lines))]
+            result = [TextContent(type="text", text="\n".join(response_lines))]
+            logger.debug(f"[GET_MODELS] Returning no-results response: {type(result)} with {len(result)} items")
+            return result
         
         # Group by project first, then by schema for better organization
         models_by_project = {}
@@ -273,22 +267,24 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
                 f"**Note:** Results limited to {limit} models. Use a higher limit or more specific filters to see more results."
             ])
         
-        return [TextContent(type="text", text="\n".join(response_lines))]
+        result = [TextContent(type="text", text="\n".join(response_lines))]
+        logger.debug(f"[GET_MODELS] Returning successful response: {type(result)} with {len(result)} items")
+        return result
         
     except FileNotFoundError as e:
-        logger.error(f"File not found in get_models: {e}")
+        logger.error(f"[GET_MODELS] File not found error: {e}")
         return [TextContent(
             type="text",
             text=f"Required dbt artifacts not found: {str(e)}"
         )]
     except ValueError as e:
-        logger.error(f"Invalid input in get_models: {e}")
+        logger.error(f"[GET_MODELS] Validation error: {e}")
         return [TextContent(
             type="text",
             text=f"Invalid input: {str(e)}"
         )]
     except Exception as e:
-        logger.error(f"Unexpected error in get_models: {e}")
+        logger.error(f"[GET_MODELS] Unexpected error: {e}")
         return [TextContent(
             type="text",
             text=f"Internal error retrieving models: {str(e)}"

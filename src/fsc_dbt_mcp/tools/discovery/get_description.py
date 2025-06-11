@@ -10,9 +10,16 @@ import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
 from fsc_dbt_mcp.project_manager import project_manager
-from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error, validate_string_argument, get_available_resources, normalize_null_to_none
+from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error
+from .properties import ToolPropertySet, DOC_NAME, REQUIRED_RESOURCE_ID
 
 logger = logging.getLogger(__name__)
+
+# Define tool properties
+_tool_properties = ToolPropertySet({
+    "doc_name": DOC_NAME,
+    "resource_id": REQUIRED_RESOURCE_ID
+})
 
 
 def get_description_tool() -> Tool:
@@ -20,54 +27,41 @@ def get_description_tool() -> Tool:
     return Tool(
         name="get_description",
         description=get_prompt("discovery/get_description"),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "doc_name": {
-                    "type": "string",
-                    "description": "Name of the documentation block to retrieve (default: '__overview__')",
-                    "default": "__overview__"
-                },
-                "resource_id": {
-                    "type": ["string", "array"],
-                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). Resource_id is the ID of a resource returned by get_resources(). Example: 'blockchain-models'",
-                    "not": {"type": ["boolean", "null"]},
-                    "items": {
-                        "type": "string"
-                    },
-                    "maxItems": 5
-                }
-            },
-            "required": ["resource_id"],
-            "additionalProperties": False
-        }
+        inputSchema=_tool_properties.get_input_schema(required_properties=["resource_id"])
     )
 
 
 async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]:
     """Handle the get_description tool invocation."""
     try:
-        # Extract arguments
-        doc_name = arguments.get("doc_name", "__overview__")
-        resource_id = normalize_null_to_none(arguments.get("resource_id"))
-        
-        doc_name = validate_string_argument(doc_name, "doc_name")
+        # Validate and extract all arguments using properties
+        logger.debug(f"[GET_DESC] Called with arguments: {arguments}")
+        params = _tool_properties.validate_and_extract_all(arguments)
+        doc_name = params["doc_name"]
+        resource_id = params["resource_id"]
+        logger.debug(f"[GET_DESC] Extracted params - doc_name: {doc_name}, resource_id: {resource_id}")
         
         # Require resource_id to avoid cross-contamination of blockchain-specific context
         if not resource_id:
-            return create_error_response(
-                "resource_id is required for get_description to avoid cross-contamination of blockchain-specific documentation. Please specify which project(s) to search"
-            )
+            logger.debug(f"[GET_DESC] resource_id is required but was not provided")
+            return [TextContent(
+                type="text",
+                text="resource_id is required for get_description to avoid cross-contamination of blockchain-specific documentation. Please specify which project(s) to search"
+            )]
         
         # Load project artifacts
+        logger.debug(f"[GET_DESC] Loading artifacts for resource_id: {resource_id}")
         artifacts = await project_manager.get_project_artifacts(resource_id)
         if not artifacts:
+            logger.debug(f"[GET_DESC] No artifacts found")
             return create_no_artifacts_error()
         
         # Search for documentation blocks across all specified projects
         all_matching_docs = []
+        logger.debug(f"[GET_DESC] Searching for doc_name '{doc_name}' in {len(artifacts)} projects")
         
         for proj_id, (manifest, _) in artifacts.items():
+            logger.debug(f"[GET_DESC] Searching in project: {proj_id}")
             # Search for documentation blocks in this project
             docs = manifest.get("docs", {})
             if not isinstance(docs, dict):
@@ -82,8 +76,11 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
                     all_matching_docs.append((proj_id, doc_id, doc_info))
         
         if not all_matching_docs:
+            logger.debug(f"[GET_DESC] No matching docs found for '{doc_name}'")
             resource_info = f" in resources {resource_id}" if resource_id else ""
             return create_resource_not_found_error(doc_name, resource_info, "Documentation block")
+        
+        logger.debug(f"[GET_DESC] Found {len(all_matching_docs)} matching documentation blocks")
         
         # Format response for all matching docs
         response_lines = [

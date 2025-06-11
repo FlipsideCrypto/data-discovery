@@ -11,9 +11,18 @@ import logging
 
 from fsc_dbt_mcp.prompts import get_prompt
 from fsc_dbt_mcp.project_manager import project_manager
-from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error, validate_string_argument, normalize_null_to_none
+from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error
+from .properties import ToolPropertySet, UNIQUE_ID, MODEL_NAME, TABLE_NAME, STANDARD_RESOURCE_ID
 
 logger = logging.getLogger(__name__)
+
+# Define tool properties
+_tool_properties = ToolPropertySet({
+    "uniqueId": UNIQUE_ID,
+    "model_name": MODEL_NAME,
+    "table_name": TABLE_NAME,
+    "resource_id": STANDARD_RESOURCE_ID
+})
 
 
 def get_model_details_tool() -> Tool:
@@ -21,64 +30,38 @@ def get_model_details_tool() -> Tool:
     return Tool(
         name="get_model_details",
         description=get_prompt("discovery/get_model_details"),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "uniqueId": {
-                    "type": "string",
-                    "description": "The unique identifier of the model (format: 'model.project_name.model_name'). STRONGLY RECOMMENDED when available."
-                },
-                "model_name": {
-                    "type": "string", 
-                    "description": "The name of the dbt model (format: 'schema__table_name'). Only use when uniqueId is unavailable."
-                },
-                "table_name": {
-                    "type": "string",
-                    "description": "The table name to search for (e.g., 'fact_transactions'). Will search across all schemas for models that produce this table name. For best results, include the resource_id with this argument."
-                },
-                "resource_id": {
-                    "type": ["string", "array"],
-                    "description": "Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs (max 5). Resource_id is the ID of a resource returned by get_resources(). Example: 'blockchain-models'",
-                    "not": {"type": ["boolean", "null"]},
-                    "items": {
-                        "type": "string"
-                    },
-                    "maxItems": 5
-                }
-            },
-            "oneOf": [
-                {"required": ["uniqueId"]},
-                {"required": ["model_name"]},
-                {"required": ["table_name"]}
+        inputSchema=_tool_properties.get_input_schema(
+            one_of_groups=[
+                ["uniqueId"],
+                ["model_name"],
+                ["table_name"]
             ]
-        }
+        )
     )
 
 
 def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[Any]]:
     """Validate and extract model identification arguments."""
+    logger.debug(f"[GET_MODEL] _validate_model_arguments called with: {arguments}")
+    
     if not isinstance(arguments, dict):
         raise ValueError("Arguments must be a dictionary")
     
-    unique_id = arguments.get("uniqueId")
-    model_name = arguments.get("model_name")
-    table_name = arguments.get("table_name")
-    resource_id = normalize_null_to_none(arguments.get("resource_id"))
+    # Validate and extract all arguments using properties
+    params = _tool_properties.validate_and_extract_all(arguments)
     
-    # Input sanitization
-    if unique_id is not None:
-        unique_id = validate_string_argument(unique_id, "uniqueId")
-        
-        # Basic format validation for unique_id
-        if not unique_id.startswith("model."):
-            raise ValueError("uniqueId must start with 'model.'")
+    unique_id = params["uniqueId"]
+    model_name = params["model_name"]
+    table_name = params["table_name"]
+    resource_id = params["resource_id"]
     
-    if model_name is not None:
-        model_name = validate_string_argument(model_name, "model_name")
+    logger.debug(f"[GET_MODEL] Extracted params - unique_id: {unique_id}, model_name: {model_name}, table_name: {table_name}, resource_id: {resource_id}")
     
-    if table_name is not None:
-        table_name = validate_string_argument(table_name, "table_name")
+    # Input sanitization and validation for unique_id format
+    if unique_id is not None and not unique_id.startswith("model."):
+        raise ValueError("uniqueId must start with 'model.'")
     
+    # Ensure at least one identifier is provided
     if not unique_id and not model_name and not table_name:
         raise ValueError("Either uniqueId, model_name, or table_name must be provided")
     
@@ -352,6 +335,7 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
     """Handle the get_model_details tool invocation with comprehensive validation."""
     try:
         # Validate input arguments
+        logger.debug(f"[GET_MODEL] Called with arguments: {arguments}")
         unique_id, model_name, table_name, resource_id = _validate_model_arguments(arguments)
         
         # If we have a specific unique_id, validate and extract project from it
@@ -375,6 +359,7 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
                         return create_resource_not_found_error(unique_id, f" in project '{extracted_project}'", "Model")
             except ValueError as e:
                 # Project validation failed - return the helpful error message
+                logger.debug(f"[GET_MODEL] Project validation failed for unique_id: {e}")
                 return [TextContent(
                     type="text",
                     text=f"Invalid unique_id: {str(e)}"

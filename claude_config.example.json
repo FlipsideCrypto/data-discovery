@@ -8,7 +8,6 @@
       "env": {
         "DBT_PATH": "/path/to/your/dbt/executable",
         "DBT_PROJECT_DIR": "/path/to/your/dbt/project",
-        "DBT_PROFILES_DIR": "/path/to/your/dbt/profiles",
         "DEBUG": "false"
       }
     }
