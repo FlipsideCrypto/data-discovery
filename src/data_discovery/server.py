@@ -42,12 +42,6 @@ from data_discovery.tools.dbt_cli import (
 )
 from data_discovery.resources import resource_registry
 
-# Configure logging
-# logging.basicConfig(
-#     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-# )
-# logger = logging.getLogger(__name__)
-
 
 # Configure loguru for MCP server
 def setup_logging():
@@ -78,13 +72,12 @@ def setup_logging():
     )
 
 
-# Setup logging immediately
 setup_logging()
 
 # Add debug info at startup
 logger.info(f"Python executable: {sys.executable}")
 logger.info(f"Working directory: {os.getcwd()}")
-logger.info(f"Python path: {sys.path[:3]}...")  # Show first 3 entries
+logger.info(f"Python path: {sys.path[:3]}...")
 
 
 class ServerConfig:
