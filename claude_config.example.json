@@ -1,10 +1,8 @@
 {
   "mcpServers": {
     "data-discovery": {
-      "command": "python",
-      "args": [
-        "/absolute/path/to/src/data-discovery/server.py"
-      ],
+      "command": "/absolute/path/to/data-discovery/.venv/bin/python",
+      "args": ["/absolute/path/to/src/data-discovery/server.py"],
       "env": {
         "DEBUG_MODE": "false",
         "DEPLOYMENT_MODE": "desktop"

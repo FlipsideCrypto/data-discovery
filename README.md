@@ -5,14 +5,26 @@ Model Context Protocol (MCP) server for dbt project discovery. Query Flipside db
 ## 🚀 Quickstart
 
 ### Prerequisites
-- Python 3.10 or higher
+- [UV](https://docs.astral.sh/uv/getting-started/installation/) with `Python 3.10` or higher
 - Git
 
-1. **Install**:
+1. **Installation**:
    ```bash
+   # clone the repo
    git clone <repo-url>
    cd data-discovery
-   pip install -e .
+   
+   # create a virtual environment
+   uv venv --python 3.10
+
+   # activate the virtual environment
+   source .venv/bin/activate
+
+   # install python dependencies
+   uv sync
+
+   # install the server as a module using uv
+   uv run python -m data_discovery.server
    ```
 
 2. **Add to Claude Desktop** (`claude_desktop_config.json`):
@@ -21,7 +33,7 @@ Configure a local MCP Server for Claude desktop with the following parameters. S
    {
      "mcpServers": {
        "data-discovery": {
-         "command": "python",
+         "command": "/absolute/path/to/data-discovery/.venv/bin/python",
          "args": ["/absolute/path/to/src/data_discovery/server.py"],
          "env": {
            "DEPLOYMENT_MODE": "desktop"
@@ -35,6 +47,27 @@ Configure a local MCP Server for Claude desktop with the following parameters. S
    - "Show me all Bitcoin core models"
    - "Get details on ethereum transaction models"
    - "List available blockchain projects"
+
+4. **Debugging**
+   - Check the `~/.cache/data-discovery/claude-server.log` file for logs from the Claude Desktop invocations of the MCP server
+
+   ```sh
+   tail -f ~/.cache/data-discovery/claude-server.log
+
+   ...
+
+   2025-06-12 19:15:46.527 | DEBUG    | __main__:call_tool:186 - [SERVER] Routing to tool handler for 'get_models'
+   2025-06-12 19:15:46.527 | DEBUG    | __main__:call_tool:199 - [SERVER] Calling handle_get_models with args: {'resource_id': 'bsc-models', 'schema': 'core', 'limit': 100}
+   2025-06-12 19:15:53.625 | DEBUG    | __main__:call_tool:167 - [SERVER] call_tool invoked - name='get_model_details', arguments={'uniqueId': 'model.fsc_evm.core__fact_blocks'}
+   2025-06-12 19:15:53.626 | DEBUG    | __main__:call_tool:183 - [SERVER] Input validation passed for tool 'get_model_details'
+   2025-06-12 19:15:53.626 | DEBUG    | __main__:call_tool:186 - [SERVER] Routing to tool handler for 'get_model_details'
+   2025-06-12 19:15:53.626 | DEBUG    | __main__:call_tool:189 - [SERVER] Calling handle_get_model_details with args: {'uniqueId': 'model.fsc_evm.core__fact_blocks'}
+   2025-06-12 19:15:58.131 | DEBUG    | __main__:call_tool:167 - [SERVER] call_tool invoked - name='get_model_details', arguments={'model_name': 'core__fact_blocks', 'resource_id': 'bsc-models'}
+   2025-06-12 19:15:58.131 | DEBUG    | __main__:call_tool:183 - [SERVER] Input validation passed for tool 'get_model_details'
+   2025-06-12 19:15:58.131 | DEBUG    | __main__:call_tool:186 - [SERVER] Routing to tool handler for 'get_model_details'
+   2025-06-12 19:15:58.131 | DEBUG    | __main__:call_tool:189 - [SERVER] Calling handle_get_model_details with args: {'model_name': 'core__fact_blocks', 'resource_id': 'bsc-models'}
+
+   ```
 
 ## Available Tools
 
