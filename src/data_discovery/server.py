@@ -46,7 +46,7 @@ from data_discovery.resources import resource_registry
 # Configure loguru for MCP server
 def setup_logging():
     """Configure loguru for MCP server communication."""
-    # Remove default handler
+    # Remove default handler to avoid duplicate logs
     logger.remove()
 
     # Add stderr handler for MCP server communication
@@ -60,7 +60,7 @@ def setup_logging():
         diagnose=True,
     )
 
-    # Also add a file handler for debugging (optional)
+    # File handler for debugging claude desktop spawned MCP server logs
     log_file = Path.home() / ".cache" / "data-discovery" / "claude-server.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     logger.add(
