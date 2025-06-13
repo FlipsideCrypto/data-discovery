@@ -5,14 +5,26 @@ Model Context Protocol (MCP) server for dbt project discovery. Query Flipside db
 ## 🚀 Quickstart
 
 ### Prerequisites
-- Python 3.10 or higher
+- [UV](https://docs.astral.sh/uv/getting-started/installation/) with `Python 3.10` or higher
 - Git
 
-1. **Install**:
+1. **Installation**:
    ```bash
+   # clone the repo
    git clone <repo-url>
    cd data-discovery
-   pip install -e .
+   
+   # create a virtual environment
+   uv venv --python 3.10
+
+   # activate the virtual environment
+   source .venv/bin/activate
+
+   # install python dependencies
+   uv sync
+
+   # install the server as a module using uv
+   uv run python -m data_discovery.server
    ```
 
 2. **Add to Claude Desktop** (`claude_desktop_config.json`):
@@ -21,7 +33,7 @@ Configure a local MCP Server for Claude desktop with the following parameters. S
    {
      "mcpServers": {
        "data-discovery": {
-         "command": "python",
+         "command": "/absolute/path/to/data-discovery/.venv/bin/python",
          "args": ["/absolute/path/to/src/data_discovery/server.py"],
          "env": {
            "DEPLOYMENT_MODE": "desktop"
