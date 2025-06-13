@@ -7,9 +7,6 @@ and custom discovery tools for dbt projects.
 """
 
 import asyncio
-import json
-
-# import logging
 import os
 import sys
 from pathlib import Path
@@ -46,10 +43,48 @@ from data_discovery.tools.dbt_cli import (
 from data_discovery.resources import resource_registry
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(
+#     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+# )
+# logger = logging.getLogger(__name__)
+
+
+# Configure loguru for MCP server
+def setup_logging():
+    """Configure loguru for MCP server communication."""
+    # Remove default handler
+    logger.remove()
+
+    # Add stderr handler for MCP server communication
+    # This ensures logs appear in Claude Desktop's MCP logs
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        level="INFO",
+        colorize=True,
+        backtrace=True,
+        diagnose=True,
+    )
+
+    # Also add a file handler for debugging (optional)
+    log_file = Path.home() / ".cache" / "data-discovery" / "claude-server.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    logger.add(
+        log_file,
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
+        level="DEBUG",
+        rotation="10 MB",
+        retention="7 days",
+    )
+
+
+# Setup logging immediately
+setup_logging()
+
+# Add debug info at startup
+logger.info(f"Python executable: {sys.executable}")
+logger.info(f"Working directory: {os.getcwd()}")
+logger.info(f"Python path: {sys.path[:3]}...")  # Show first 3 entries
 
 
 class ServerConfig:
@@ -63,7 +98,8 @@ class ServerConfig:
     def validate(self):
         """Validate configuration settings."""
         if self.debug_mode:
-            logger.setLevel(logging.DEBUG)
+            logger.remove()  # remove the old handler. Else, the old one will work along with the new one you've added below'
+            logger.add(sys.stderr, level="DEBUG")
 
 
 def create_server() -> Server:
