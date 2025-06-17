@@ -9,14 +9,7 @@ import os
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
-import logging
-
-logger = logging.getLogger(__name__)
-
-# Enable debug logging if environment variable is set
-DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes', 'on')
-if DEBUG_MODE:
-    logger.setLevel(logging.DEBUG)
+from loguru import logger
 
 
 class ToolProperty(ABC):
@@ -441,6 +434,11 @@ TABLE_NAME = NameProperty(
 UNIQUE_ID = NameProperty(
     param_name="uniqueId",
     description="The unique identifier of the model (format: 'model.project_name.model_name'). STRONGLY RECOMMENDED when available."
+)
+
+FQN = NameProperty(
+    param_name="fqn",
+    description="Fully qualified name for model search (format: 'database.schema.table' or 'schema.table'). Example: 'ethereum.core.fact_transactions'"
 )
 
 SCHEMA_FILTER = FilterProperty(

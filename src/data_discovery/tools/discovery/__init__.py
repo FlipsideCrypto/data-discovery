@@ -13,8 +13,7 @@ from .utils import (
     get_available_resources,
     create_error_response,
     create_resource_not_found_error,
-    create_no_artifacts_error,
-    validate_string_argument
+    create_no_artifacts_error
 )
 
 __all__ = [
@@ -29,6 +28,5 @@ __all__ = [
     "get_available_resources",
     "create_error_response",
     "create_resource_not_found_error",
-    "create_no_artifacts_error",
-    "validate_string_argument"
+    "create_no_artifacts_error"
 ]

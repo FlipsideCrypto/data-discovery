@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-FSC dbt MCP Server
+FSC data-discovery MCP Server
 
-A comprehensive MCP server that provides both core dbt functionality
-and custom discovery tools for dbt projects.
+A comprehensive MCP server that provides discovery tools for dbt projects.
 """
 
 import asyncio
@@ -34,11 +33,6 @@ from data_discovery.tools.discovery import (
     handle_get_models,
     get_resources_tool,
     handle_get_resources,
-)
-from data_discovery.tools.dbt_cli import (
-    get_dbt_cli_tools,
-    handle_dbt_cli_tool,
-    is_dbt_cli_tool,
 )
 from data_discovery.resources import resource_registry
 
@@ -129,7 +123,7 @@ def create_server() -> Server:
 
     @server.list_tools()
     async def list_tools():
-        """List available discovery and dbt CLI tools."""
+        """List available tools."""
         try:
             tools = []
 
@@ -139,16 +133,7 @@ def create_server() -> Server:
             tools.append(get_models_tool())
             tools.append(get_resources_tool())
 
-            # Add dbt CLI tools
-            # dbt_tools = get_dbt_cli_tools()
-            # tools.extend(dbt_tools)
-
-            # disable dbt tools for now as they have not been migrated to multi-project
-            dbt_tools = []
-
-            logger.info(
-                f"Listed {len(tools)} total tools ({len(dbt_tools)} dbt CLI tools)"
-            )
+            logger.info(f"Listed {len(tools)} total tools")
             return tools
         except Exception as e:
             logger.error(f"Error listing tools: {e}")
@@ -198,11 +183,6 @@ def create_server() -> Server:
                     f"[SERVER] Calling handle_get_resources with args: {arguments}"
                 )
                 return await handle_get_resources(arguments)
-            elif is_dbt_cli_tool(name):
-                logger.debug(
-                    f"[SERVER] Calling dbt CLI tool handler for '{name}' with args: {arguments}"
-                )
-                return await handle_dbt_cli_tool(name, arguments)
             else:
                 logger.debug(f"[SERVER] Unknown tool name: '{name}'")
                 raise ValueError(f"Unknown tool: {name}")
@@ -218,7 +198,7 @@ def create_server() -> Server:
 
 
 async def main() -> int:
-    """Main entry point for the FSC dbt MCP server."""
+    """Main entry point for the FSC data-discovery MCP server."""
     try:
         logger.info("Starting data-discovery server")
 
@@ -228,7 +208,7 @@ async def main() -> int:
         # Initialize server options
         init_options = InitializationOptions(
             server_name="data-discovery",
-            server_version="0.2.0",
+            server_version="0.2.2",
             capabilities=server.get_capabilities(
                 notification_options=NotificationOptions(), experimental_capabilities={}
             ),

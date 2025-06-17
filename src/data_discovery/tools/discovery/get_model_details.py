@@ -7,20 +7,18 @@ Supports multi-project operations with project-aware functionality.
 import json
 from typing import Dict, Any, Optional, Tuple
 from mcp.types import Tool, TextContent
-import logging
+from loguru import logger
 
 from data_discovery.prompts import get_prompt
-from data_discovery.project_manager import project_manager
-from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error
-from .properties import ToolPropertySet, UNIQUE_ID, MODEL_NAME, TABLE_NAME, STANDARD_RESOURCE_ID
-
-logger = logging.getLogger(__name__)
+from data_discovery.api.service import DataDiscoveryService
+from .properties import ToolPropertySet, UNIQUE_ID, MODEL_NAME, TABLE_NAME, FQN, STANDARD_RESOURCE_ID
 
 # Define tool properties
 _tool_properties = ToolPropertySet({
     "uniqueId": UNIQUE_ID,
     "model_name": MODEL_NAME,
     "table_name": TABLE_NAME,
+    "fqn": FQN,
     "resource_id": STANDARD_RESOURCE_ID
 })
 
@@ -34,13 +32,14 @@ def get_model_details_tool() -> Tool:
             one_of_groups=[
                 ["uniqueId"],
                 ["model_name"],
-                ["table_name"]
+                ["table_name"],
+                ["fqn"]
             ]
         )
     )
 
 
-def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[Any]]:
+def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[Any]]:
     """Validate and extract model identification arguments."""
     logger.debug(f"[GET_MODEL] _validate_model_arguments called with: {arguments}")
     
@@ -53,158 +52,90 @@ def _validate_model_arguments(arguments: Dict[str, Any]) -> Tuple[Optional[str],
     unique_id = params["uniqueId"]
     model_name = params["model_name"]
     table_name = params["table_name"]
+    fqn = params["fqn"]
     resource_id = params["resource_id"]
     
-    logger.debug(f"[GET_MODEL] Extracted params - unique_id: {unique_id}, model_name: {model_name}, table_name: {table_name}, resource_id: {resource_id}")
+    logger.debug(f"[GET_MODEL] Extracted params - unique_id: {unique_id}, model_name: {model_name}, table_name: {table_name}, fqn: {fqn}, resource_id: {resource_id}")
     
     # Input sanitization and validation for unique_id format
     if unique_id is not None and not unique_id.startswith("model."):
         raise ValueError("uniqueId must start with 'model.'")
     
     # Ensure at least one identifier is provided
-    if not unique_id and not model_name and not table_name:
-        raise ValueError("Either uniqueId, model_name, or table_name must be provided")
+    if not unique_id and not model_name and not table_name and not fqn:
+        raise ValueError("Either uniqueId, model_name, table_name, or fqn must be provided")
     
-    return unique_id, model_name, table_name, resource_id
+    return unique_id, model_name, table_name, fqn, resource_id
 
 
-def _find_model_node(manifest: Dict[str, Any], unique_id: Optional[str], 
-                     model_name: Optional[str], table_name: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Find model node in manifest with proper error handling."""
-    nodes = manifest.get("nodes", {})
-    
-    if not isinstance(nodes, dict):
-        raise ValueError("Invalid manifest structure: 'nodes' is not a dictionary")
-    
-    if unique_id:
-        # Direct lookup by unique_id
-        model_node = nodes.get(unique_id)
-        if model_node and model_node.get("resource_type") == "model":
-            return model_node, unique_id
-        return None, None
-    
-    elif model_name:
-        # Search by model name
-        for node_id, node in nodes.items():
-            if (isinstance(node, dict) and 
-                node.get("resource_type") == "model" and 
-                node.get("name") == model_name):
-                return node, node_id
-    
-    elif table_name:
-        # Search by table name - check relation_name and extract table name from model patterns
-        matching_models = []
-        
-        for node_id, node in nodes.items():
-            if not isinstance(node, dict) or node.get("resource_type") != "model":
-                continue
-            
-            # Check relation_name (e.g., "flipside_dev_models.core.fact_transactions")
-            relation_name = node.get("relation_name", "")
-            if relation_name and relation_name.endswith(f".{table_name}"):
-                matching_models.append((node, node_id))
-                continue
-            
-            # Check if model name ends with the table name (e.g., "core__fact_transactions")
-            model_node_name = node.get("name", "")
-            if model_node_name.endswith(f"__{table_name}") or model_node_name.endswith(f"_{table_name}"):
-                matching_models.append((node, node_id))
-                continue
-            
-            # Check if the model name exactly matches the table name
-            if model_node_name == table_name:
-                matching_models.append((node, node_id))
-        
-        # Return first match if any found
-        if matching_models:
-            return matching_models[0]
-    
-    return None, None
 
 
-async def _format_model_details_response(model_node: Dict[str, Any], unique_id: str, 
-                                        catalog: Dict[str, Any], resource_id: str) -> list[TextContent]:
-    """Format model details into a comprehensive response."""
+async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextContent]:
+    """Handle the get_model_details tool invocation using shared service."""
     try:
-        # Get catalog information if available
-        catalog_node = catalog.get("nodes", {}).get(unique_id, {})
+        # Validate input arguments
+        logger.debug(f"[GET_MODEL] Called with arguments: {arguments}")
+        unique_id, model_name, table_name, fqn, resource_id = _validate_model_arguments(arguments)
         
-        # Extract model details
-        model_details = {
-            "unique_id": unique_id,
-            "name": model_node.get("name"),
-            "description": model_node.get("description", ""),
-            "schema": model_node.get("schema"),
-            "database": model_node.get("database"),
-            "relation_name": model_node.get("relation_name"),
-            "materialized": model_node.get("config", {}).get("materialized"),
-            "tags": model_node.get("tags", []),
-            "meta": model_node.get("meta", {}),
-            "path": model_node.get("original_file_path"),
-            "raw_code": model_node.get("raw_code", ""),
-            "compiled_code": model_node.get("compiled_code"),
-            "depends_on": model_node.get("depends_on", {}),
-            "refs": model_node.get("refs", []),
-            "sources": model_node.get("sources", []),
-            "fqn": model_node.get("fqn", []),
-            "access": model_node.get("access"),
-            "constraints": model_node.get("constraints", []),
-            "version": model_node.get("version"),
-            "latest_version": model_node.get("latest_version"),
-            "resource_id": resource_id,
-        }
+        # Use shared service to get model details
+        service = DataDiscoveryService()
+        result = await service.get_model_by_id(
+            unique_id=unique_id,
+            model_name=model_name,
+            table_name=table_name,
+            fqn=fqn,
+            resource_id=resource_id
+        )
         
-        # Add column information from manifest
-        manifest_columns = model_node.get("columns", {})
-        # Ensure manifest_columns is a dictionary, not None
-        if not isinstance(manifest_columns, dict):
-            manifest_columns = {}
+        # Handle error case
+        if result.get("error"):
+            logger.debug(f"[GET_MODEL] Service returned error: {result['error']}")
+            return [TextContent(
+                type="text",
+                text=result["error"],
+                isError=True
+            )]
+        
+        # Handle multiple matches case
+        if result.get("multiple_matches"):
+            response_lines = [
+                result["message"],
+                ""
+            ]
+            for i, match in enumerate(result["matches"], 1):
+                response_lines.extend([
+                    f"{i}. **Project:** {match['resource_id']}",
+                    f"   **Unique ID:** {match['unique_id']}",
+                    f"   **Schema:** {match.get('schema', 'N/A')}",
+                    f"   **Database:** {match.get('database', 'N/A')}",
+                    ""
+                ])
             
-        columns = {}
-        for col_name, col_info in manifest_columns.items():
-            columns[col_name] = {
-                "name": col_name,
-                "description": col_info.get("description", ""),
-                "data_type": col_info.get("data_type"),
-                "meta": col_info.get("meta", {}),
-                "tags": col_info.get("tags", []),
-                "constraints": col_info.get("constraints", [])
-            }
+            response_lines.append("Please use the specific uniqueId to get details for the desired model.")
+            return [TextContent(type="text", text="\n".join(response_lines))]
         
-        # Enhance with catalog column information if available
-        catalog_columns = catalog_node.get("columns", {})
-        # Ensure catalog_columns is a dictionary, not None
-        if not isinstance(catalog_columns, dict):
-            catalog_columns = {}
-            
-        for col_name, col_info in catalog_columns.items():
-            if col_name in columns:
-                columns[col_name].update({
-                    "type": col_info.get("type"),
-                    "index": col_info.get("index"),
-                    "comment": col_info.get("comment")
-                })
-            else:
-                # Column exists in catalog but not manifest
-                columns[col_name] = {
-                    "name": col_name,
-                    "type": col_info.get("type"),
-                    "index": col_info.get("index"),
-                    "comment": col_info.get("comment", ""),
-                    "description": "",
-                    "data_type": col_info.get("type"),
-                    "meta": {},
-                    "tags": [],
-                    "constraints": []
-                }
+        # Convert service result to MCP TextContent format
+        return _convert_model_details_to_mcp_format(result)
         
-        model_details["columns"] = columns
-        
-        # Add catalog metadata if available
-        if catalog_node:
-            model_details["catalog_metadata"] = catalog_node.get("metadata", {})
-            model_details["stats"] = catalog_node.get("stats", {})
-        
+    except ValueError as e:
+        logger.error(f"Invalid input in get_model_details: {e}")
+        return [TextContent(
+            type="text",
+            text=f"Invalid input: {str(e)}",
+            isError=True
+        )]
+    except Exception as e:
+        logger.error(f"Unexpected error in get_model_details: {e}")
+        return [TextContent(
+            type="text",
+            text=f"Internal error retrieving model details: {str(e)}",
+            isError=True
+        )]
+
+
+def _convert_model_details_to_mcp_format(model_details: Dict[str, Any]) -> list[TextContent]:
+    """Convert shared service model details to MCP TextContent format."""
+    try:
         # Format the response
         response_lines = [
             f"# Model Details: {model_details['name']}",
@@ -218,21 +149,21 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
             ""
         ]
         
-        if model_details["description"]:
+        if model_details.get("description"):
             response_lines.extend([
                 "## Description",
                 model_details["description"],
                 ""
             ])
         
-        if model_details["tags"]:
+        if model_details.get("tags"):
             response_lines.extend([
                 "## Tags",
                 ", ".join(model_details["tags"]),
                 ""
             ])
         
-        if model_details["meta"]:
+        if model_details.get("meta"):
             response_lines.extend([
                 "## Meta",
                 json.dumps(model_details["meta"], indent=2),
@@ -240,6 +171,7 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
             ])
         
         # Columns section
+        columns = model_details.get("columns", {})
         if columns:
             response_lines.extend([
                 "## Columns",
@@ -261,13 +193,13 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
                 response_lines.append("")
         
         # Dependencies section
-        if model_details["refs"] or model_details["sources"]:
+        if model_details.get("refs") or model_details.get("sources"):
             response_lines.extend([
                 "## Dependencies",
                 ""
             ])
             
-            if model_details["refs"]:
+            if model_details.get("refs"):
                 response_lines.extend([
                     "**Models Referenced:**",
                     ""
@@ -276,7 +208,7 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
                     response_lines.append(f"- {'.'.join(ref) if isinstance(ref, list) else ref}")
                 response_lines.append("")
             
-            if model_details["sources"]:
+            if model_details.get("sources"):
                 response_lines.extend([
                     "**Sources Referenced:**",
                     ""
@@ -300,7 +232,7 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
             response_lines.append("")
         
         # Raw SQL section
-        if model_details["raw_code"]:
+        if model_details.get("raw_code"):
             response_lines.extend([
                 "## Raw SQL",
                 "",
@@ -312,7 +244,7 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
         
         # Compiled SQL section (if different from raw)
         if (model_details.get("compiled_code") and 
-            model_details["compiled_code"] != model_details["raw_code"]):
+            model_details["compiled_code"] != model_details.get("raw_code")):
             response_lines.extend([
                 "## Compiled SQL",
                 "",
@@ -328,113 +260,4 @@ async def _format_model_details_response(model_node: Dict[str, Any], unique_id: 
         return [TextContent(
             type="text",
             text=f"Error formatting model details: {str(e)}"
-        )]
-
-
-async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextContent]:
-    """Handle the get_model_details tool invocation with comprehensive validation."""
-    try:
-        # Validate input arguments
-        logger.debug(f"[GET_MODEL] Called with arguments: {arguments}")
-        unique_id, model_name, table_name, resource_id = _validate_model_arguments(arguments)
-        
-        # If we have a specific unique_id, validate and extract project from it
-        if unique_id:
-            try:
-                # Validate the project in unique_id exists
-                extracted_project = project_manager._validate_unique_id_project(unique_id)
-                
-                # Load artifacts for this specific project
-                artifacts = await project_manager.get_project_artifacts(extracted_project)
-                if extracted_project in artifacts:
-                    manifest, catalog = artifacts[extracted_project]
-                    
-                    # Find the model in this specific project
-                    model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name, table_name)
-                    
-                    if model_node and found_unique_id:
-                        return await _format_model_details_response(model_node, found_unique_id, catalog, extracted_project)
-                    else:
-                        # Model not found in the expected project
-                        return create_resource_not_found_error(unique_id, f" in project '{extracted_project}'", "Model")
-            except ValueError as e:
-                # Project validation failed - return the helpful error message
-                logger.debug(f"[GET_MODEL] Project validation failed for unique_id: {e}")
-                return [TextContent(
-                    type="text",
-                    text=f"Invalid unique_id: {str(e)}",
-                    isError=True
-                )]
-        
-        # Multi-project search (when model_name provided or unique_id lookup failed)
-        if model_name:
-            found_models = await project_manager.find_model_in_projects(model_name, resource_id)
-            
-            if not found_models:
-                identifier = unique_id if unique_id else model_name
-                project_info = f" in projects {resource_id}" if resource_id else ""
-                return create_resource_not_found_error(identifier, project_info, "Model")
-            
-            if len(found_models) == 1:
-                # Single model found
-                found_model = found_models[0]
-                return await _format_model_details_response(
-                    found_model["manifest_data"], 
-                    found_model["unique_id"], 
-                    {"nodes": {found_model["unique_id"]: found_model["catalog_data"]}},
-                    found_model["resource_id"]
-                )
-            else:
-                # Multiple models found - show disambiguation
-                response_lines = [
-                    f"Multiple models named '{model_name}' found:",
-                    ""
-                ]
-                for i, found_model in enumerate(found_models, 1):
-                    response_lines.extend([
-                        f"{i}. **Project:** {found_model['resource_id']}",
-                        f"   **Unique ID:** {found_model['unique_id']}",
-                        f"   **Schema:** {found_model['manifest_data'].get('schema', 'N/A')}",
-                        f"   **Database:** {found_model['manifest_data'].get('database', 'N/A')}",
-                        ""
-                    ])
-                
-                response_lines.append("Please use the specific uniqueId to get details for the desired model.")
-                return [TextContent(type="text", text="\n".join(response_lines))]
-        
-        # Fallback: load artifacts and try single-project search
-        artifacts = await project_manager.get_project_artifacts(resource_id or [])
-        if not artifacts:
-            return create_no_artifacts_error()
-        
-        # Search in available projects
-        for proj_id, (manifest, catalog) in artifacts.items():
-            model_node, found_unique_id = _find_model_node(manifest, unique_id, model_name, table_name)
-            if model_node and found_unique_id:
-                return await _format_model_details_response(model_node, found_unique_id, catalog, proj_id)
-        
-        # Model not found in any project
-        identifier = unique_id if unique_id else (model_name if model_name else table_name)
-        return create_resource_not_found_error(identifier, "", "Model")
-        
-    except FileNotFoundError as e:
-        logger.error(f"File not found in get_model_details: {e}")
-        return [TextContent(
-            type="text",
-            text=f"Required dbt artifacts not found: {str(e)}",
-            isError=True
-        )]
-    except ValueError as e:
-        logger.error(f"Invalid input in get_model_details: {e}")
-        return [TextContent(
-            type="text",
-            text=f"Invalid input: {str(e)}",
-            isError=True
-        )]
-    except Exception as e:
-        logger.error(f"Unexpected error in get_model_details: {e}")
-        return [TextContent(
-            type="text",
-            text=f"Internal error retrieving model details: {str(e)}",
-            isError=True
         )]

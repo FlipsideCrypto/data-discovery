@@ -7,7 +7,7 @@ name = "data-discovery"
 description = "MCP server for dbt project discovery across blockchain datasets"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "0.2.0"
+version = "0.2.2"
 authors = [
     { name = "forgxyz" },
 ]
