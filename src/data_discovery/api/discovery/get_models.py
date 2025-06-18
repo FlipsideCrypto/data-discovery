@@ -43,7 +43,7 @@ async def get_models(
         description="Filter models by schema name (partial match supported)"
     ),
     level: Optional[str] = Query(
-        default=None,
+        default="gold",
         description="Filter models by medallion architecture level (bronze, silver, gold)"
     ),
     resource_id: Optional[str] = Query(

@@ -491,7 +491,11 @@ class DataDiscoveryService:
                 elif level == "silver":
                     matches = any("silver" in part.lower() for part in model_fqn) or "silver" in model_info.get("schema", "").lower()
                 elif level == "gold":
-                    matches = any("gold" in part.lower() for part in model_fqn) or "gold" in model_info.get("schema", "").lower()
+                    # Exclude fsc_utils models from gold results  
+                    if "fsc_utils" in model_id:
+                        matches = False
+                    else:
+                        matches = any("gold" in part.lower() for part in model_fqn) or "gold" in model_info.get("schema", "").lower()
             else:
                 # If no schema or level filter provided, include all models from the resource
                 matches = True
