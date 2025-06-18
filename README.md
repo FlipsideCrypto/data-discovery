@@ -1,6 +1,6 @@
-# Data Discovery MCP Server
+# Data Discovery API
 
-Model Context Protocol (MCP) server for dbt project discovery. Query Flipside dbt models through any MCP-enabled client.
+**REST API-first** data discovery system for dbt projects across blockchain datasets. Provides FastAPI endpoints with optional MCP tool integration for AI agents.
 
 ## 🚀 Quickstart
 
@@ -8,33 +8,57 @@ Model Context Protocol (MCP) server for dbt project discovery. Query Flipside db
 - [UV](https://docs.astral.sh/uv/getting-started/installation/) with `Python 3.10` or higher
 - Git
 
+### 🔌 REST API (Primary)
+
 1. **Installation**:
    ```bash
-   # clone the repo
+   # Clone and setup
    git clone <repo-url>
    cd data-discovery
-   
-   # create a virtual environment
-   uv venv --python 3.10
-
-   # activate the virtual environment
-   source .venv/bin/activate
-
-   # install python dependencies
    uv sync
-
-   # install the server as a module using uv
-   uv run python -m data_discovery.server
+   
+   # Configure environment (optional)
+   cp .env.example .env
+   # Edit .env as needed
    ```
 
-2. **Add to Claude Desktop** (`claude_desktop_config.json`):
-Configure a local MCP Server for Claude desktop with the following parameters. See the [MCP documentation](https://modelcontextprotocol.io/quickstart/user#2-add-the-filesystem-mcp-server) for additional help. A file `claude_config.example.json` is also maintained.  
+2. **Start the API server**:
+   ```bash
+   # Development server with hot reload
+   uv run uvicorn src.data_discovery.main:app --reload --host 0.0.0.0 --port 8000
+   
+   # Or using the main module
+   uv run python src/data_discovery/main.py
+   ```
+
+3. **Test the API**:
+   ```bash
+   # Health check
+   curl http://localhost:8000/health
+   
+   # List resources
+   curl http://localhost:8000/api/v1/discovery/resources
+   
+   # API documentation
+   open http://localhost:8000/docs
+   ```
+
+### 🤖 MCP Integration (Claude Desktop)
+
+For Claude Desktop, use the uv directory approach (similar to other MCP servers):
+
+1. **Add to Claude Desktop** (`claude_desktop_config.json`):
    ```json
    {
      "mcpServers": {
        "data-discovery": {
-         "command": "/absolute/path/to/data-discovery/.venv/bin/python",
-         "args": ["/absolute/path/to/src/data_discovery/server.py"],
+         "command": "/absolute/path/to/.local/bin/uv",
+         "args": [
+           "--directory",
+           "/absolute/path/to/data-discovery",
+           "run",
+           "src/data_discovery/server.py"
+         ],
          "env": {
            "DEPLOYMENT_MODE": "desktop"
          }
@@ -43,79 +67,153 @@ Configure a local MCP Server for Claude desktop with the following parameters. S
    }
    ```
 
-3. **Restart Claude Desktop** and start exploring:
+2. **Alternative - Direct Python path**:
+   ```json
+   {
+     "mcpServers": {
+       "data-discovery": {
+         "command": "/absolute/path/to/data-discovery/.venv/bin/python",
+         "args": ["/absolute/path/to/data-discovery/src/data_discovery/server.py"],
+         "env": {
+           "DEPLOYMENT_MODE": "desktop"
+         }
+       }
+     }
+   }
+   ```
+
+4. **Restart Claude Desktop** and explore:
    - "Show me all Bitcoin core models"
    - "Get details on ethereum transaction models"
    - "List available blockchain projects"
 
-4. **Debugging**
-   - Check the `~/.cache/data-discovery/claude-server.log` file for logs from the Claude Desktop invocations of the MCP server
+## 📊 API Endpoints
 
-   ```sh
-   tail -f ~/.cache/data-discovery/claude-server.log
+### Core Discovery Endpoints
+- **`GET /api/v1/discovery/resources`** - List available dbt projects with filtering
+- **`GET /api/v1/discovery/models`** - Search models by schema, level, or resource
+- **`GET /api/v1/discovery/models/{unique_id}`** - Get detailed model information
+- **`GET /api/v1/discovery/descriptions/{doc_name}`** - Retrieve documentation blocks
 
-   ...
+### Additional Endpoints
+- **`GET /health`** - Health check and status
+- **`GET /docs`** - Interactive API documentation
+- **`GET /openapi.json`** - OpenAPI specification
+- **`/mcp`** - MCP protocol endpoint (when fastapi_mcp available)
 
-   2025-06-12 19:15:46.527 | DEBUG    | __main__:call_tool:186 - [SERVER] Routing to tool handler for 'get_models'
-   2025-06-12 19:15:46.527 | DEBUG    | __main__:call_tool:199 - [SERVER] Calling handle_get_models with args: {'resource_id': 'bsc-models', 'schema': 'core', 'limit': 100}
-   2025-06-12 19:15:53.625 | DEBUG    | __main__:call_tool:167 - [SERVER] call_tool invoked - name='get_model_details', arguments={'uniqueId': 'model.fsc_evm.core__fact_blocks'}
-   2025-06-12 19:15:53.626 | DEBUG    | __main__:call_tool:183 - [SERVER] Input validation passed for tool 'get_model_details'
-   2025-06-12 19:15:53.626 | DEBUG    | __main__:call_tool:186 - [SERVER] Routing to tool handler for 'get_model_details'
-   2025-06-12 19:15:53.626 | DEBUG    | __main__:call_tool:189 - [SERVER] Calling handle_get_model_details with args: {'uniqueId': 'model.fsc_evm.core__fact_blocks'}
-   2025-06-12 19:15:58.131 | DEBUG    | __main__:call_tool:167 - [SERVER] call_tool invoked - name='get_model_details', arguments={'model_name': 'core__fact_blocks', 'resource_id': 'bsc-models'}
-   2025-06-12 19:15:58.131 | DEBUG    | __main__:call_tool:183 - [SERVER] Input validation passed for tool 'get_model_details'
-   2025-06-12 19:15:58.131 | DEBUG    | __main__:call_tool:186 - [SERVER] Routing to tool handler for 'get_model_details'
-   2025-06-12 19:15:58.131 | DEBUG    | __main__:call_tool:189 - [SERVER] Calling handle_get_model_details with args: {'model_name': 'core__fact_blocks', 'resource_id': 'bsc-models'}
+### MCP Tools (Auto-Generated)
+When accessed via MCP clients, the REST endpoints are automatically exposed as tools:
+- **`get_resources`** - List available dbt projects
+- **`get_models`** - Search models across projects
+- **`get_model_by_id`** - Get model details by unique ID
+- **`get_description`** - Documentation blocks with context
 
-   ```
-
-## Available Tools
-
-### Discovery Tools ✅
-- **`get_resources`** - List available dbt projects (Bitcoin, Ethereum, Kairos)
-- **`get_models`** - Search models across projects with filtering
-- **`get_model_details`** - Comprehensive model metadata and schema
-- **`get_description`** - Documentation blocks with expert context
-
-### dbt CLI Tools ⚠️ 
-Currently disabled pending multi-project migration:
-- `dbt_list`, `dbt_compile`, `dbt_show`
-
-## Configuration
+## ⚙️ Configuration
 
 ### Environment Variables
-- `DEPLOYMENT_MODE` - Set to `"desktop"` for Claude Desktop (required or Claude Desktop will try to use an unwritable cache directory)
-- `DEBUG` - Enable debug logging (`"true"`/`"false"`)
-- `DBT_PATH` - Full path to dbt executable (not necessary as all `dbt_cli` tools are disabled and will probably be deprecated)
+All configuration can be set via environment variables or `.env` file:
 
-### Deployment Modes
-- **`desktop`** (recommended): Uses `~/.cache/data-discovery/` for cache
-- **`local`**: Uses `target/` directory (development only)
-
-## Troubleshooting
-
-### Common Issues
-1. **`Error executing code: Cannot convert undefined or null to object`**
-   - Client passed `null` as `resource_id` 
-   - JSON artifacts not cached yet
-
-2. **"dbt command not found"**
-   - Set `DBT_PATH` environment variable
-   - Example: `DBT_PATH=/Users/username/.pyenv/versions/3.12.11/bin/dbt`
-
-### Test Server
 ```bash
-python src/data_discovery/server.py
+# API Server Settings
+API_HOST=0.0.0.0           # Server host
+API_PORT=8000              # Server port
+
+# Application Settings  
+DEBUG_MODE=false           # Enable debug logging
+DEPLOYMENT_MODE=api        # Deployment mode (api/desktop)
+LOG_LEVEL=INFO            # Logging level
+
+# Resource Limits
+MAX_FILE_SIZE=10485760    # Max file size (10MB)
+MAX_PROJECTS=50           # Max projects to load simultaneously
 ```
 
-## Technical Details
+### Deployment Modes
+- **`api`** (default): REST API server mode
+- **`desktop`**: Claude Desktop MCP integration mode
+- **`local`**: Development mode with local caching
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+1. **API Server Won't Start**
+   ```bash
+   # Check if port is in use
+   lsof -i :8000
+   
+   # Use different port
+   API_PORT=8001 uv run uvicorn src.data_discovery.main:app --port 8001
+   ```
+
+2. **MCP Integration Issues**
+   ```bash
+   # Check if fastapi_mcp is installed
+   uv pip show fastapi-mcp
+   
+   # Install if missing
+   uv add fastapi-mcp
+   ```
+
+3. **Empty Results from API**
+   - No project artifacts cached yet
+   - Check resource configuration in `src/data_discovery/resources/`
+
+### Development
+```bash
+# Run with hot reload
+uv run uvicorn src.data_discovery.main:app --reload
+
+# Test legacy MCP server
+uv run python src/data_discovery/server.py
+
+# Check logs
+tail -f ~/.cache/data-discovery/claude-server.log
+```
+
+## 🏗️ Architecture
+
+### REST API-First Design
+- **FastAPI** - Modern async web framework
+- **Pydantic** - Data validation and serialization  
+- **Single Service Layer** - Shared business logic between REST and MCP
+- **Automatic MCP Integration** - REST endpoints wrapped as MCP tools
+
+### Key Components
+- `src/data_discovery/main.py` - FastAPI application entry point
+- `src/data_discovery/core/service.py` - Core business logic
+- `src/data_discovery/api/discovery/` - REST endpoint implementations
+- `src/data_discovery/server.py` - Legacy MCP server (still supported)
 
 ### Dependencies
+- `fastapi` + `uvicorn` - REST API server
+- `fastapi-mcp` - Automatic MCP tool generation
 - `mcp` - Model Context Protocol SDK
 - `aiohttp` - Async HTTP for GitHub integration
+- `pydantic` - Data validation and settings
+- `loguru` - Advanced logging
 
-### Architecture
-- Multi-project artifact management with local caching
-- GitHub integration for remote dbt artifacts  
-- MCP Resources for project discovery
-- Property-based input validation
+---
+
+## 🔄 Migration from MCP-First
+
+This project has been refactored from MCP-first to **REST API-first** architecture:
+
+### What Changed
+- **Primary Interface**: REST API endpoints (was: MCP tools)
+- **MCP Integration**: Auto-generated from REST endpoints (was: manually coded)
+- **Single Codebase**: No duplication between REST and MCP (was: separate implementations)
+- **Entry Point**: `src/data_discovery/main.py` (was: `src/data_discovery/server.py`)
+
+### Backward Compatibility
+- ✅ **Legacy MCP server** still works (`src/data_discovery/server.py`)
+- ✅ **All MCP tools** available through REST API + fastapi_mcp
+- ✅ **Same functionality** with improved architecture
+- ✅ **Claude Desktop** integration maintained
+
+### Benefits
+- 🚀 **Better Performance** - Direct REST API access
+- 🔧 **Easier Integration** - Standard HTTP endpoints
+- 📖 **Auto Documentation** - OpenAPI/Swagger docs
+- 🧪 **Better Testing** - Standard REST API testing tools
+- 🔄 **Single Source of Truth** - No code duplication
