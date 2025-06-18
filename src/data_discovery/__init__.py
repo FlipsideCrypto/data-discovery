@@ -1,1 +1,1 @@
-# Custom dbt MCP Server - data-discovery
+# Custom dbt FastAPI and MCP Server - data-discovery

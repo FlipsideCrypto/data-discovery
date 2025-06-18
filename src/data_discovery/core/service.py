@@ -1,6 +1,5 @@
 """
 Core service layer for data discovery functionality.
-This is the single source of truth for all business logic.
 """
 from typing import Dict, Any, List, Optional, Tuple
 from loguru import logger

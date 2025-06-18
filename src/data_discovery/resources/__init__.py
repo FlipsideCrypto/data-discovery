@@ -4,7 +4,6 @@ MCP Resources package for dbt project discovery.
 This package provides MCP resources for exposing dbt project information
 to AI models through the Model Context Protocol.
 
-Now supports CSV-driven resource definitions for scalable project management.
 """
 
 import json

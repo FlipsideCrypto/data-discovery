@@ -36,11 +36,11 @@ class ProjectManagerConfig:
         elif self.DEPLOYMENT_MODE in ['desktop', 'remote']:
             # Claude Desktop or remote deployment - use absolute writable path
             import tempfile
-            return os.path.join(os.path.expanduser('~'), '.cache', 'fsc-dbt-mcp')
+            return os.path.join(os.path.expanduser('~'), '.cache', 'data-discovery')
         else:
             # Unknown mode - fallback to temp directory
             import tempfile
-            return os.path.join(tempfile.gettempdir(), 'fsc-dbt-mcp')
+            return os.path.join(tempfile.gettempdir(), 'data-discovery')
 
 
 class ProjectManager:
