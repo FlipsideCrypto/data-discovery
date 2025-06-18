@@ -4,13 +4,13 @@ get_description tool for retrieving documentation blocks from dbt manifest.
 Follows MCP best practices for input validation, error handling, and security.
 Supports multi-project operations with project-aware functionality.
 """
-from typing import Dict, Any
+from typing import Dict, Any, Union, List
 from mcp.types import Tool, TextContent
+from pydantic import Field
 from loguru import logger
 
 from data_discovery.prompts import get_prompt
 from data_discovery.api.service import DataDiscoveryService
-from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error
 from .properties import ToolPropertySet, DOC_NAME, REQUIRED_RESOURCE_ID
 
 # Define tool properties
@@ -72,6 +72,43 @@ async def handle_get_description(arguments: Dict[str, Any]) -> list[TextContent]
             text=f"Internal error retrieving description: {str(e)}",
             isError=True
         )]
+
+
+# FastMCP-compatible wrapper function
+async def fastmcp_get_description(
+    resource_id: Union[str, List[str]] = Field(
+        description="Resource ID(s) to search in. Required to avoid cross-contamination of blockchain-specific documentation."
+    ),
+    doc_name: str = Field(
+        default="__overview__",
+        description="Name of the documentation block to retrieve"
+    )
+) -> str:
+    """
+    FastMCP wrapper for get_description tool.
+    Retrieve documentation blocks from dbt manifest.
+    Follows MCP best practices for input validation, error handling, and security.
+    """
+    try:
+        logger.debug(f"get_description called with doc_name={doc_name}, resource_id={resource_id}")
+        
+        service = DataDiscoveryService()
+        result = await service.get_description(
+            doc_name=doc_name,
+            resource_id=resource_id
+        )
+        
+        if result.get("error"):
+            logger.error(f"Service error in get_description: {result['error']}")
+            raise RuntimeError(result["error"])
+        
+        # Convert service result to formatted text
+        text_result = _convert_description_to_mcp_format(result)
+        return text_result[0].text if text_result else "Documentation not found"
+        
+    except Exception as e:
+        logger.error(f"Error in get_description: {e}")
+        raise RuntimeError(f"Internal error retrieving description: {str(e)}")
 
 
 def _convert_description_to_mcp_format(result: Dict[str, Any]) -> list[TextContent]:

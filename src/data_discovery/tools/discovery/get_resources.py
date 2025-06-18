@@ -2,13 +2,13 @@
 get_resources tool for listing all available dbt project resources.
 Provides discovery of blockchain projects available for analysis.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from mcp.types import Tool, TextContent
+from pydantic import Field
 from loguru import logger
 
 from data_discovery.prompts import get_prompt
 from data_discovery.api.service import DataDiscoveryService
-from .utils import create_no_artifacts_error
 from .properties import ToolPropertySet, SHOW_DETAILS, BLOCKCHAIN_FILTER, CATEGORY_FILTER
 
 # Define tool properties
@@ -68,6 +68,49 @@ async def handle_get_resources(arguments: Dict[str, Any]) -> list[TextContent]:
             text="Internal error retrieving resources",
             isError=True
         )]
+
+
+# FastMCP-compatible wrapper function
+async def fastmcp_get_resources(
+    show_details: bool = Field(
+        default=False,
+        description="Include detailed information like schemas, aliases, and artifact locations"
+    ),
+    blockchain_filter: Optional[str] = Field(
+        default=None,
+        description="Filter resources by blockchain name or alias (e.g., 'ethereum', 'eth', 'bitcoin', 'btc')"
+    ),
+    category_filter: Optional[str] = Field(
+        default=None,
+        description="Filter resources by category (e.g., 'evm', 'l1', 'svm', 'multi-chain')"
+    )
+) -> str:
+    """
+    FastMCP wrapper for get_resources tool.
+    List available dbt project resources.
+    Provides discovery of blockchain projects available for analysis.
+    """
+    try:
+        logger.debug(f"get_resources called with show_details={show_details}, blockchain_filter={blockchain_filter}, category_filter={category_filter}")
+        
+        service = DataDiscoveryService()
+        result = await service.get_resources(
+            show_details=show_details,
+            blockchain_filter=blockchain_filter,
+            category_filter=category_filter
+        )
+        
+        if result.get("error"):
+            logger.error(f"Service error in get_resources: {result['error']}")
+            raise RuntimeError(result["error"])
+        
+        # Convert service result to formatted text
+        text_result = _convert_resources_to_mcp_format(result)
+        return text_result[0].text if text_result else "No resources found"
+        
+    except Exception as e:
+        logger.error(f"Error in get_resources: {e}")
+        raise RuntimeError(f"Internal error retrieving resources: {str(e)}")
 
 
 def _convert_resources_to_mcp_format(result: Dict[str, Any]) -> list[TextContent]:

@@ -3,13 +3,14 @@ get_models tool for retrieving dbt models with filtering by schema or medallion 
 Supports multi-project operations with project-aware functionality.
 """
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from mcp.types import Tool, TextContent
+from pydantic import Field
 from loguru import logger
 
 from data_discovery.prompts import get_prompt
 from data_discovery.api.service import DataDiscoveryService
-from .utils import create_error_response, create_resource_not_found_error, create_no_artifacts_error, get_available_resources
+from .utils import get_available_resources
 from .properties import ToolPropertySet, SCHEMA_FILTER, LEVEL_FILTER, STANDARD_RESOURCE_ID, STANDARD_LIMIT
 
 # Define tool properties using the shared properties system
@@ -98,6 +99,60 @@ async def handle_get_models(arguments: Dict[str, Any]) -> list[TextContent]:
             text=f"Internal error retrieving models: {str(e)}",
             isError=True
         )]
+
+
+# FastMCP-compatible wrapper function
+async def fastmcp_get_models(
+    schema: Optional[str] = Field(
+        default=None,
+        description="Filter models by schema name (e.g., 'core', 'defi', 'nft'). Takes precedence over level if both are provided."
+    ),
+    level: Optional[str] = Field(
+        default=None,
+        description="Filter models by medallion level (bronze, silver, gold). Ignored if schema is provided."
+    ),
+    resource_id: Optional[Union[str, List[str]]] = Field(
+        default=None,
+        description="Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs. Example: 'ethereum-models' or ['bitcoin-models', 'ethereum-models']"
+    ),
+    limit: int = Field(
+        default=25,
+        description="Maximum number of models to return",
+        ge=1,
+        le=100
+    )
+) -> str:
+    """
+    FastMCP wrapper for get_models tool.
+    Search and retrieve dbt models with filtering by schema or medallion level.
+    Supports multi-project operations with project-aware functionality.
+    """
+    try:
+        # Validate that at least one filtering parameter is provided
+        if not schema and not level and not resource_id:
+            raise ValueError("At least one parameter (schema, level, or resource_id) is required. Use get_resources() to see available options.")
+        
+        logger.debug(f"get_models called with schema={schema}, level={level}, resource_id={resource_id}, limit={limit}")
+        
+        service = DataDiscoveryService()
+        result = await service.get_models(
+            schema=schema,
+            level=level,
+            resource_id=resource_id,
+            limit=limit
+        )
+        
+        if result.get("error"):
+            logger.error(f"Service error in get_models: {result['error']}")
+            raise RuntimeError(result["error"])
+        
+        # Convert service result to formatted text
+        text_result = _convert_models_to_mcp_format(result, schema, level, resource_id, limit)
+        return text_result[0].text if text_result else "No models found"
+        
+    except Exception as e:
+        logger.error(f"Error in get_models: {e}")
+        raise RuntimeError(f"Internal error retrieving models: {str(e)}")
 
 
 def _convert_models_to_mcp_format(

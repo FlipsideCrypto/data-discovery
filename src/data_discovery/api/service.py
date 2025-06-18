@@ -831,15 +831,22 @@ class DataDiscoveryService:
                     logger.warning(f"Invalid manifest structure in project {proj_id}: 'docs' is not a dictionary")
                     continue
                 
-                # Find matching documentation blocks
+                # Find matching documentation blocks (exclude dbt package defaults)
                 for doc_id, doc_info in docs.items():
                     if (isinstance(doc_info, dict) and 
                         doc_info.get("resource_type") == "doc" and
                         doc_info.get("name") == doc_name):
+                        
+                        # Exclude documentation from the dbt package to avoid default duplicates
+                        package_name = doc_info.get("package_name", "")
+                        if package_name == "dbt":
+                            logger.debug(f"Skipping dbt package documentation: doc_id='{doc_id}', name='{doc_name}'")
+                            continue
+                        
                         all_matching_docs.append({
                             "project_id": proj_id,
                             "doc_id": doc_id,
-                            "package_name": doc_info.get("package_name", "Unknown Package"),
+                            "package_name": package_name or "Unknown Package",
                             "path": doc_info.get("original_file_path", "Unknown path"),
                             "content": doc_info.get("block_contents", "")
                         })

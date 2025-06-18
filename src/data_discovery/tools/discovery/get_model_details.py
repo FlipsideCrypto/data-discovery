@@ -5,8 +5,9 @@ Follows MCP best practices for input validation, error handling, and security.
 Supports multi-project operations with project-aware functionality.
 """
 import json
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union, List
 from mcp.types import Tool, TextContent
+from pydantic import Field
 from loguru import logger
 
 from data_discovery.prompts import get_prompt
@@ -131,6 +132,85 @@ async def handle_get_model_details(arguments: Dict[str, Any]) -> list[TextConten
             text=f"Internal error retrieving model details: {str(e)}",
             isError=True
         )]
+
+
+# FastMCP-compatible wrapper function
+async def fastmcp_get_model_details(
+    uniqueId: Optional[str] = Field(
+        default=None,
+        description="The unique identifier of the model (format: 'model.project_name.model_name'). STRONGLY RECOMMENDED when available."
+    ),
+    fqn: Optional[str] = Field(
+        default=None,
+        description="Fully qualified name for model search (format: 'database.schema.table' or 'schema.table'). Example: 'ethereum.core.fact_transactions'"
+    ),
+    model_name: Optional[str] = Field(
+        default=None,
+        description="The name of the dbt model (format: 'schema__table_name'). Only use when uniqueId is unavailable."
+    ),
+    table_name: Optional[str] = Field(
+        default=None,
+        description="The table name to search for (e.g., 'fact_transactions'). Will search across all schemas for models that produce this table name."
+    ),
+    resource_id: Optional[Union[str, List[str]]] = Field(
+        default=None,
+        description="Resource ID(s) to search in. Can be a single resource ID string or array of resource IDs."
+    )
+) -> str:
+    """
+    FastMCP wrapper for get_model_details tool.
+    Get comprehensive model metadata including columns, dependencies, SQL, and statistics for a specific dbt model.
+    Supports multiple search methods: uniqueId (preferred), FQN, model_name, or table_name.
+    """
+    try:
+        # Validate that at least one identifier is provided
+        if not uniqueId and not fqn and not model_name and not table_name:
+            raise ValueError("Either uniqueId, fqn, model_name, or table_name must be provided")
+        
+        # Input sanitization for unique_id format
+        if uniqueId is not None and not uniqueId.startswith("model."):
+            raise ValueError("uniqueId must start with 'model.'")
+        
+        logger.debug(f"get_model_details called with uniqueId={uniqueId}, fqn={fqn}, model_name={model_name}, table_name={table_name}, resource_id={resource_id}")
+        
+        service = DataDiscoveryService()
+        result = await service.get_model_by_id(
+            unique_id=uniqueId,
+            fqn=fqn,
+            model_name=model_name,
+            table_name=table_name,
+            resource_id=resource_id
+        )
+        
+        if result.get("error"):
+            logger.error(f"Service error in get_model_details: {result['error']}")
+            raise RuntimeError(result["error"])
+        
+        # Handle multiple matches case
+        if result.get("multiple_matches"):
+            response_lines = [
+                result["message"],
+                ""
+            ]
+            for i, match in enumerate(result["matches"], 1):
+                response_lines.extend([
+                    f"{i}. **Project:** {match['resource_id']}",
+                    f"   **Unique ID:** {match['unique_id']}",
+                    f"   **Schema:** {match.get('schema', 'N/A')}",
+                    f"   **Database:** {match.get('database', 'N/A')}",
+                    ""
+                ])
+            
+            response_lines.append("Please use the specific uniqueId to get details for the desired model.")
+            return "\n".join(response_lines)
+        
+        # Convert service result to formatted text
+        text_result = _convert_model_details_to_mcp_format(result)
+        return text_result[0].text if text_result else "Model details not found"
+        
+    except Exception as e:
+        logger.error(f"Error in get_model_details: {e}")
+        raise RuntimeError(f"Internal error retrieving model details: {str(e)}")
 
 
 def _convert_model_details_to_mcp_format(model_details: Dict[str, Any]) -> list[TextContent]:

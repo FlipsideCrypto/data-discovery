@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """
-FSC data-discovery MCP Server
+FSC data-discovery MCP Server using FastMCP
 
-A comprehensive MCP server that provides discovery tools for dbt projects.
+A lightweight, modular MCP server that provides discovery tools for dbt projects.
+Uses FastMCP for simplified server management and type safety.
 """
 
-import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
-from pydantic import AnyUrl
+from typing import Optional
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from loguru import logger
 
-from mcp.server import Server, NotificationOptions
-from mcp.server.models import InitializationOptions
-from mcp import stdio_server, types
-from mcp.types import TextContent
+from mcp.server.fastmcp import FastMCP
 
 # Add the src directory to the Python path for absolute imports
 server_dir = Path(__file__).parent.parent.parent
@@ -24,17 +22,14 @@ src_dir = server_dir / "src"
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from data_discovery.tools.discovery import (
-    get_model_details_tool,
-    handle_get_model_details,
-    get_description_tool,
-    handle_get_description,
-    get_models_tool,
-    handle_get_models,
-    get_resources_tool,
-    handle_get_resources,
-)
+from data_discovery.api.service import DataDiscoveryService
 from data_discovery.resources import resource_registry
+
+# Import FastMCP tool wrappers
+from data_discovery.tools.discovery.get_resources import fastmcp_get_resources
+from data_discovery.tools.discovery.get_models import fastmcp_get_models
+from data_discovery.tools.discovery.get_model_details import fastmcp_get_model_details
+from data_discovery.tools.discovery.get_description import fastmcp_get_description
 
 
 # Configure loguru for MCP server
@@ -66,168 +61,86 @@ def setup_logging():
     )
 
 
-setup_logging()
-
-# Add debug info at startup
-logger.info(f"Python executable: {sys.executable}")
-logger.info(f"Working directory: {os.getcwd()}")
-logger.info(f"Python path: {sys.path[:3]}...")
+# Global service instance for FastMCP tools
+_service_instance: Optional[DataDiscoveryService] = None
 
 
-class ServerConfig:
-    """Server configuration management."""
-
-    def __init__(self):
-        self.debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
-        self.deployment_mode = os.getenv("DEPLOYMENT_MODE", "desktop").lower()
-        self.max_file_size = int(os.getenv("MAX_FILE_SIZE", "10485760"))  # 10MB
-
-    def validate(self):
-        """Validate configuration settings."""
-        if self.debug_mode:
-            logger.remove()  # remove the old handler. Else, the old one will work along with the new one you've added below'
-            logger.add(sys.stderr, level="DEBUG")
+def get_service() -> DataDiscoveryService:
+    """Get the global service instance."""
+    global _service_instance
+    if _service_instance is None:
+        _service_instance = DataDiscoveryService()
+    return _service_instance
 
 
-def create_server() -> Server:
-    """Create a comprehensive MCP server with discovery functionality."""
-    config = ServerConfig()
-    config.validate()
-
-    server = Server("data-discovery")
-
-    @server.list_resources()
-    async def list_resources() -> List[types.Resource]:
-        """List available MCP resources for dbt projects."""
-        try:
-            resources = resource_registry.list_all_resources()
-            logger.info(f"Listed {len(resources)} MCP resources")
-            return resources
-        except Exception as e:
-            logger.error(f"Error listing resources: {e}")
-            raise RuntimeError(f"Failed to list resources: {str(e)}")
-
-    @server.read_resource()
-    async def read_resource(uri: AnyUrl) -> str:
-        """Read MCP resource content for dbt projects."""
-        try:
-            uri_str = str(uri)
-            logger.info(f"Reading resource: {uri_str}")
-
-            content = resource_registry.get_resource_content(uri_str)
-            return content
-
-        except Exception as e:
-            logger.error(f"Error reading resource '{uri}': {e}")
-            raise RuntimeError(f"Failed to read resource: {str(e)}")
-
-    @server.list_tools()
-    async def list_tools():
-        """List available tools."""
-        try:
-            tools = []
-
-            # Add custom discovery tools
-            tools.append(get_model_details_tool())
-            tools.append(get_description_tool())
-            tools.append(get_models_tool())
-            tools.append(get_resources_tool())
-
-            logger.info(f"Listed {len(tools)} total tools")
-            return tools
-        except Exception as e:
-            logger.error(f"Error listing tools: {e}")
-            raise RuntimeError(f"Failed to list tools: {str(e)}")
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
-        """Handle tool calls with comprehensive error handling."""
-        logger.debug(
-            f"[SERVER] call_tool invoked - name='{name}', arguments={arguments}"
-        )
-
-        try:
-            # Input validation
-            if not name:
-                logger.debug(f"[SERVER] Tool name validation failed - empty name")
-                raise ValueError("Tool name cannot be empty")
-
-            if not isinstance(arguments, dict):
-                logger.debug(
-                    f"[SERVER] Arguments validation failed - not dict: {type(arguments)}"
-                )
-                raise ValueError("Arguments must be a dictionary")
-
-            logger.debug(f"[SERVER] Input validation passed for tool '{name}'")
-
-            # Route to appropriate tool handler
-            logger.debug(f"[SERVER] Routing to tool handler for '{name}'")
-
-            if name == "get_model_details":
-                logger.debug(
-                    f"[SERVER] Calling handle_get_model_details with args: {arguments}"
-                )
-                return await handle_get_model_details(arguments)
-            elif name == "get_description":
-                logger.debug(
-                    f"[SERVER] Calling handle_get_description with args: {arguments}"
-                )
-                return await handle_get_description(arguments)
-            elif name == "get_models":
-                logger.debug(
-                    f"[SERVER] Calling handle_get_models with args: {arguments}"
-                )
-                return await handle_get_models(arguments)
-            elif name == "get_resources":
-                logger.debug(
-                    f"[SERVER] Calling handle_get_resources with args: {arguments}"
-                )
-                return await handle_get_resources(arguments)
-            else:
-                logger.debug(f"[SERVER] Unknown tool name: '{name}'")
-                raise ValueError(f"Unknown tool: {name}")
-
-        except (ValueError, FileNotFoundError) as e:
-            logger.error(f"[SERVER] Error in tool '{name}': {e}")
-            raise
-        except Exception as e:
-            logger.error(f"[SERVER] Unexpected error in tool '{name}': {e}")
-            raise RuntimeError(f"Internal error: {str(e)}")
-
-    return server
-
-
-async def main() -> int:
-    """Main entry point for the FSC data-discovery MCP server."""
+@asynccontextmanager
+async def app_lifespan(_server: FastMCP) -> AsyncIterator[None]:
+    """Manage application lifecycle and dependencies."""
+    logger.info("Starting data-discovery server")
+    
+    # Initialize global service
+    global _service_instance
+    _service_instance = DataDiscoveryService()
+    
+    # Debug info at startup
+    logger.info(f"Python executable: {sys.executable}")
+    logger.info(f"Working directory: {os.getcwd()}")
+    logger.info(f"Deployment mode: {os.getenv('DEPLOYMENT_MODE', 'desktop')}")
+    
     try:
-        logger.info("Starting data-discovery server")
-
-        # Create and configure server
-        server = create_server()
-
-        # Initialize server options
-        init_options = InitializationOptions(
-            server_name="data-discovery",
-            server_version="0.2.2",
-            capabilities=server.get_capabilities(
-                notification_options=NotificationOptions(), experimental_capabilities={}
-            ),
-        )
-
-        # Run the server using stdio transport
-        async with stdio_server() as (read_stream, write_stream):
-            await server.run(read_stream, write_stream, init_options)
-
+        yield
+    finally:
         logger.info("Server shutdown completed")
-        return 0
+        _service_instance = None
 
-    except KeyboardInterrupt:
-        logger.info("Server shutdown requested by user")
-        return 0
+
+# Initialize FastMCP server
+setup_logging()
+mcp = FastMCP("data-discovery", lifespan=app_lifespan)
+
+
+# ========== RESOURCES ==========
+
+@mcp.resource("dbt://projects")
+async def dbt_projects_index() -> str:
+    """Index of all available dbt projects with metadata."""
+    try:
+        content = resource_registry.get_resource_content("dbt://projects")
+        logger.info("Served dbt projects index resource")
+        return content
     except Exception as e:
-        logger.error(f"Failed to start server: {e}")
-        return 1
+        logger.error(f"Error reading projects index: {e}")
+        raise RuntimeError(f"Failed to read projects index: {str(e)}")
 
+
+@mcp.resource("dbt://project/{project_id}")
+async def dbt_project_resource(project_id: str) -> str:
+    """Individual dbt project resource with metadata."""
+    try:
+        uri = f"dbt://project/{project_id}"
+        content = resource_registry.get_resource_content(uri)
+        logger.info(f"Served dbt project resource: {project_id}")
+        return content
+    except Exception as e:
+        logger.error(f"Error reading project resource '{project_id}': {e}")
+        raise RuntimeError(f"Failed to read project resource: {str(e)}")
+
+
+# ========== TOOLS ==========
+
+# Register FastMCP tools with proper names and full signatures
+get_resources = mcp.tool(name="get_resources")(fastmcp_get_resources)
+get_models = mcp.tool(name="get_models")(fastmcp_get_models) 
+get_model_details = mcp.tool(name="get_model_details")(fastmcp_get_model_details)
+get_description = mcp.tool(name="get_description")(fastmcp_get_description)
+
+
+# ========== SERVER ENTRY POINT ==========
 
 if __name__ == "__main__":
-    exit(asyncio.run(main()))
+    # Enable debug logging if requested
+    if os.getenv("DEBUG_MODE", "false").lower() == "true":
+        logger.remove()
+        logger.add(sys.stderr, level="DEBUG")
+    
+    mcp.run()
