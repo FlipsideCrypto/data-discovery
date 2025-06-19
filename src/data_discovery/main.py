@@ -20,7 +20,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Data Discovery API",
         description="REST API for dbt project discovery across blockchain datasets",
-        version="0.2.0",
+        version="0.3.0",
         openapi_url="/openapi.json",
         docs_url="/docs",
         redoc_url="/redoc"
@@ -45,7 +45,7 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health_check():
         """Health check endpoint."""
-        return {"status": "healthy", "version": "0.2.0", "mcp_enabled": MCP_AVAILABLE}
+        return {"status": "healthy", "version": app.version, "mcp_enabled": MCP_AVAILABLE}
     
     return app
 
@@ -53,7 +53,12 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point for console script."""
     import uvicorn
     logger.info("Starting FastAPI server")
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("data_discovery.main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+if __name__ == "__main__":
+    main()

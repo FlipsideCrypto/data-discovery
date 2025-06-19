@@ -15,6 +15,12 @@
    # Clone and setup
    git clone <repo-url>
    cd data-discovery
+   
+   # Create and activate a virtual environment with uv
+   uv venv
+   source .venv/bin/activate
+   
+   # Install dependencies
    uv sync
    
    # Configure environment (optional)
@@ -24,10 +30,13 @@
 
 2. **Start the API server**:
    ```bash
+   # Using the console script (recommended)
+   data-discovery
+   
    # Development server with hot reload
    uv run uvicorn src.data_discovery.main:app --reload --host 0.0.0.0 --port 8000
    
-   # Or using the main module
+   # Or using the main module directly
    uv run python src/data_discovery/main.py
    ```
 
@@ -43,11 +52,25 @@
    open http://localhost:8000/docs
    ```
 
-### 🤖 MCP Integration (Claude Desktop)
+### 🤖 MCP Integration
 
-For Claude Desktop, use the uv directory approach (similar to other MCP servers):
+**Note**: The integrated fastapi_mcp currently only supports SSE (Server-Sent Events) transport, while Claude **Desktop** requires stdio transport.
 
-1. **Add to Claude Desktop** (`claude_desktop_config.json`):
+1. **Cursor Integration**:
+   ```json
+   {
+     "mcpServers": {
+       "data-discovery": {
+         "url": "url": "http://localhost:8000/mcp"
+       }
+     }
+   }
+   ```
+*Start the API server per the quickstart guide.*  
+*If hosted remotely, replace `localhost:8000` with the host.*  
+
+2. **Claude Desktop Deployment Configuration** (`claude_desktop_config.json`):
+*NOT YET SUPPORTED*  
    ```json
    {
      "mcpServers": {
@@ -57,7 +80,7 @@ For Claude Desktop, use the uv directory approach (similar to other MCP servers)
            "--directory",
            "/absolute/path/to/data-discovery",
            "run",
-           "src/data_discovery/server.py"
+           "data-discovery"
          ],
          "env": {
            "DEPLOYMENT_MODE": "desktop"
@@ -67,22 +90,13 @@ For Claude Desktop, use the uv directory approach (similar to other MCP servers)
    }
    ```
 
-2. **Alternative - Direct Python path**:
-   ```json
-   {
-     "mcpServers": {
-       "data-discovery": {
-         "command": "/absolute/path/to/data-discovery/.venv/bin/python",
-         "args": ["/absolute/path/to/data-discovery/src/data_discovery/server.py"],
-         "env": {
-           "DEPLOYMENT_MODE": "desktop"
-         }
-       }
-     }
-   }
-   ```
+3. **MCP Transport Limitations**:
+   - **fastapi_mcp**: SSE transport only (web browsers, API clients)
+   - **Claude Desktop**: Requires stdio transport
+   - **Solution**: Use the main app with MCP integration for Claude Desktop
+   - **Future**: stdio support may be added to fastapi_mcp
 
-4. **Restart Claude Desktop** and explore:
+4. **Restart MCP Client** and explore:
    - "Show me all Bitcoin core models"
    - "Get details on ethereum transaction models"
    - "List available blockchain projects"
@@ -90,16 +104,16 @@ For Claude Desktop, use the uv directory approach (similar to other MCP servers)
 ## 📊 API Endpoints
 
 ### Core Discovery Endpoints
-- **`GET /api/v1/discovery/resources`** - List available dbt projects with filtering
-- **`GET /api/v1/discovery/models`** - Search models by schema, level, or resource
-- **`GET /api/v1/discovery/models/{unique_id}`** - Get detailed model information
-- **`GET /api/v1/discovery/descriptions/{doc_name}`** - Retrieve documentation blocks
+- **`GET /api/v1/resources`** - List available dbt projects with filtering
+- **`GET /api/v1/models`** - Search models by schema, level, or resource (defaults to level=gold)
+- **`GET /api/v1/models/{unique_id}`** - Get detailed model information
+- **`GET /api/v1/descriptions/{doc_name}`** - Retrieve documentation blocks
 
 ### Additional Endpoints
 - **`GET /health`** - Health check and status
 - **`GET /docs`** - Interactive API documentation
 - **`GET /openapi.json`** - OpenAPI specification
-- **`/mcp`** - MCP protocol endpoint (when fastapi_mcp available)
+- **`/mcp`** - MCP protocol endpoint via SSE (when fastapi_mcp available)
 
 ### MCP Tools (Auto-Generated)
 When accessed via MCP clients, the REST endpoints are automatically exposed as tools:
@@ -129,8 +143,8 @@ MAX_PROJECTS=50           # Max projects to load simultaneously
 ```
 
 ### Deployment Modes
-- **`api`** (default): REST API server mode
-- **`desktop`**: Claude Desktop MCP integration mode
+- **`api`** (default): REST API server mode with optional MCP via SSE
+- **`desktop`**: Claude Desktop MCP integration mode (stdio transport)
 - **`local`**: Development mode with local caching
 
 ## 🔧 Troubleshooting
@@ -148,7 +162,7 @@ MAX_PROJECTS=50           # Max projects to load simultaneously
 
 2. **MCP Integration Issues**
    ```bash
-   # Check if fastapi_mcp is installed
+   # Check if fastapi_mcp is installed (for SSE transport)
    uv pip show fastapi-mcp
    
    # Install if missing
@@ -164,8 +178,8 @@ MAX_PROJECTS=50           # Max projects to load simultaneously
 # Run with hot reload
 uv run uvicorn src.data_discovery.main:app --reload
 
-# Test legacy MCP server
-uv run python src/data_discovery/server.py
+# Test the console script
+data-discovery
 
 # Check logs
 tail -f ~/.cache/data-discovery/claude-server.log
@@ -180,10 +194,10 @@ tail -f ~/.cache/data-discovery/claude-server.log
 - **Automatic MCP Integration** - REST endpoints wrapped as MCP tools
 
 ### Key Components
-- `src/data_discovery/main.py` - FastAPI application entry point
+- `src/data_discovery/main.py` - FastAPI application entry point with MCP integration
 - `src/data_discovery/core/service.py` - Core business logic
 - `src/data_discovery/api/discovery/` - REST endpoint implementations
-- `src/data_discovery/server.py` - Legacy MCP server (still supported)
+- `src/data_discovery/mcp/` - MCP integration module
 
 ### Dependencies
 - `fastapi` + `uvicorn` - REST API server
@@ -195,9 +209,12 @@ tail -f ~/.cache/data-discovery/claude-server.log
 
 ---
 
-## 🔄 Migration from MCP-First
+## 📋 Recent Changes
 
-This project has been refactored from MCP-first to **REST API-first** architecture:
+### API Filtering Updates
+- **Default Level**: `/models` endpoint now defaults to `level=gold` for higher quality results
+- **Utility Model Filtering**: Models from `fsc_utils` package are excluded from gold-level results
+- **Quality Focus**: Gold level now returns curated, production-ready models only
 
 ### What Changed
 - **Primary Interface**: REST API endpoints (was: MCP tools)
@@ -227,3 +244,8 @@ This project has been refactored from MCP-first to **REST API-first** architectu
 cd infrastructure
 uv run cdk deploy
 ```
+### MCP Transport Limitations
+- **fastapi_mcp**: Currently supports SSE transport only
+- **Claude Desktop**: Requires stdio transport (incompatible with fastapi_mcp)
+- **Workaround**: Use standalone MCP server (`src/data_discovery/server.py`) for Claude Desktop
+- **Future**: stdio transport support may be added to fastapi_mcp

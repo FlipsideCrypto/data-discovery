@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "data-discovery"
-description = "REST API for dbt project discovery across blockchain datasets with optional MCP integration"
+description = "REST API-first data discovery for dbt projects with MCP integration (SSE transport)"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "0.2.0"
+version = "0.3.0"
 authors = [
     { name = "forgxyz" },
 ]
@@ -23,8 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-data-discovery = "data_discovery.main:app"
-data-discovery-mcp = "data_discovery.server:main"
+data-discovery = "data_discovery.main:main"
 
 [project.optional-dependencies]
 dev = [
