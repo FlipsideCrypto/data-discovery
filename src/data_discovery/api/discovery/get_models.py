@@ -55,19 +55,27 @@ async def get_models(
         ge=1,
         le=10000,
         description="Maximum number of models to return"
+    ),
+    show_details: bool = Query(
+        default=False,
+        description="Include additional model details beyond basic fields (name, database, schema, description, relation_name)"
     )
 ) -> ModelsResponse:
     """
     Search for dbt models with various filtering options.
     
-    At least one of schema, level, or resource_id must be provided.
+    At least one of schema, level, or resource_id must be provided. Level defaults to gold.
     Results are sorted by project, schema, then model name.
+    
+    Basic fields (always returned): name, database, schema, description, relation_name.
+    Additional fields (show_details=True): unique_id, materialized, tags, path, fqn, resource_id.
     """
     result = await service.get_models(
         schema=schema,
         level=level,
         resource_id=resource_id,
-        limit=limit
+        limit=limit,
+        show_details=show_details
     )
     
     return ModelsResponse(**result)
@@ -88,22 +96,31 @@ async def get_model_by_id(
     resource_id: Optional[str] = Query(
         default=None,
         description="Specific resource/project ID to search within (optional for FQN)"
+    ),
+    show_details: bool = Query(
+        default=False,
+        description="Include additional model details beyond basic fields (name, database, schema, description, relation_name, columns)"
     )
 ) -> ModelDetailsResponse:
     """
-    Get detailed information about a specific model by its unique ID or FQN.
+    Get detailed information about a specific model by its unique ID or FQN (FQN in this case is in the context of the deployed table. dbt calls this "relation_name").
     
     Supports two formats:
     - Unique ID: model.{project}.{name}
     - FQN: {database}.{schema}.{table}
+    
+    Basic fields (always returned): name, database, schema, description, relation_name, columns.
+    Additional fields (show_details=True): unique_id, materialized, tags, meta, path, raw_code, 
+    compiled_code, depends_on, refs, sources, fqn, access, constraints, version, latest_version, 
+    resource_id, catalog_metadata, stats.
     """
     # Check if it's a unique_id (starts with "model.") or FQN
     if identifier.startswith("model."):
         # Handle as unique_id
-        result = await service.get_model_details(unique_id=identifier)
+        result = await service.get_model_details(unique_id=identifier, show_details=show_details)
     else:
         # Handle as FQN (database.schema.table)
-        result = await service.get_model_details(fqn=identifier, resource_id=resource_id)
+        result = await service.get_model_details(fqn=identifier, resource_id=resource_id, show_details=show_details)
     
     if not result["success"] and "Invalid unique_id" in result.get("error", ""):
         raise HTTPException(status_code=400, detail=result["error"])

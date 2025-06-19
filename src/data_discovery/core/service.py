@@ -58,7 +58,8 @@ class DataDiscoveryService:
                     {
                         "id": resource.get("id"),
                         "blockchain": resource.get("blockchain"),
-                        "description": resource.get("description", "")
+                        "description": resource.get("description", ""),
+                        "aliases": resource.get("aliases", [])
                     }
                     for resource in filtered_resources
                 ]
@@ -89,7 +90,8 @@ class DataDiscoveryService:
         schema: Optional[str] = None,
         level: Optional[str] = None,
         resource_id: Optional[str] = None,
-        limit: int = 100
+        limit: int = 100,
+        show_details: bool = False
     ) -> Dict[str, Any]:
         """Get models with filtering by schema or medallion level."""
         try:
@@ -152,7 +154,7 @@ class DataDiscoveryService:
             for proj_id, (manifest, _) in successful_artifacts.items():
                 nodes = manifest.get("nodes", {})
                 if isinstance(nodes, dict):
-                    project_models = self._filter_models_by_criteria(nodes, schema, level, proj_id)
+                    project_models = self._filter_models_by_criteria(nodes, schema, level, proj_id, show_details)
                     all_filtered_models.extend(project_models)
             
             # Sort and limit
@@ -175,7 +177,8 @@ class DataDiscoveryService:
                     "schema": schema,
                     "level": level,
                     "resource_id": resource_id,
-                    "limit": limit
+                    "limit": limit,
+                    "show_details": show_details
                 }
             }
             
@@ -193,7 +196,8 @@ class DataDiscoveryService:
         model_name: Optional[str] = None,
         table_name: Optional[str] = None,
         fqn: Optional[str] = None,
-        resource_id: Optional[str] = None
+        resource_id: Optional[str] = None,
+        show_details: bool = False
     ) -> Dict[str, Any]:
         """Get detailed information about a specific model."""
         try:
@@ -216,7 +220,7 @@ class DataDiscoveryService:
                     }
                 
                 database, schema, table = parts
-                return await self._find_model_by_fqn(database, schema, table, resource_id)
+                return await self._find_model_by_fqn(database, schema, table, resource_id, show_details)
             
             # Handle unique_id lookup
             if unique_id:
@@ -239,7 +243,7 @@ class DataDiscoveryService:
                         
                         if model_node and found_unique_id:
                             model_details = self._format_model_details(
-                                model_node, found_unique_id, catalog, extracted_project
+                                model_node, found_unique_id, catalog, extracted_project, show_details
                             )
                             return {
                                 "success": True,
@@ -275,7 +279,8 @@ class DataDiscoveryService:
                         found_model["manifest_data"],
                         found_model["unique_id"],
                         {"nodes": {found_model["unique_id"]: found_model["catalog_data"]}},
-                        found_model["resource_id"]
+                        found_model["resource_id"],
+                        show_details
                     )
                     return {
                         "success": True,
@@ -312,7 +317,7 @@ class DataDiscoveryService:
                 )
                 if model_node and found_unique_id:
                     model_details = self._format_model_details(
-                        model_node, found_unique_id, catalog, proj_id
+                        model_node, found_unique_id, catalog, proj_id, show_details
                     )
                     return {
                         "success": True,
@@ -470,7 +475,8 @@ class DataDiscoveryService:
         models: Dict[str, Any], 
         schema: Optional[str], 
         level: Optional[str], 
-        resource_id: str
+        resource_id: str,
+        show_details: bool = False
     ) -> List[Dict[str, Any]]:
         """Filter models based on schema or medallion level criteria."""
         filtered_models = []
@@ -501,19 +507,26 @@ class DataDiscoveryService:
                 matches = True
             
             if matches:
+                # Base fields (always included)
                 model_data = {
-                    "unique_id": model_id,
                     "name": model_info.get("name"),
-                    "schema": model_info.get("schema"),
                     "database": model_info.get("database"),
-                    "materialized": model_info.get("config", {}).get("materialized"),
+                    "schema": model_info.get("schema"),
                     "description": model_info.get("description", ""),
-                    "tags": model_info.get("tags", []),
-                    "path": model_info.get("original_file_path"),
-                    "fqn": model_info.get("fqn", []),
-                    "relation_name": model_info.get("relation_name"),
-                    "resource_id": resource_id
+                    "relation_name": model_info.get("relation_name")
                 }
+                
+                # Additional fields when show_details=True
+                if show_details:
+                    model_data.update({
+                        "unique_id": model_id,
+                        "materialized": model_info.get("config", {}).get("materialized"),
+                        "tags": model_info.get("tags", []),
+                        "path": model_info.get("original_file_path"),
+                        "fqn": model_info.get("fqn", []),
+                        "resource_id": resource_id
+                    })
+                
                 filtered_models.append(model_data)
         
         return sorted(filtered_models, key=lambda x: (x.get("schema", ""), x.get("name", "")))
@@ -571,7 +584,8 @@ class DataDiscoveryService:
         model_node: Dict[str, Any], 
         unique_id: str, 
         catalog: Dict[str, Any], 
-        resource_id: str
+        resource_id: str,
+        show_details: bool = False
     ) -> Dict[str, Any]:
         """Format model details into a structured response."""
         catalog_node = catalog.get("nodes", {}).get(unique_id, {})
@@ -615,39 +629,48 @@ class DataDiscoveryService:
                         "constraints": []
                     }
         
-        return {
-            "unique_id": unique_id,
+        # Base fields (always included for /models/{id})
+        result = {
             "name": model_node.get("name"),
-            "description": model_node.get("description", ""),
-            "schema": model_node.get("schema"),
             "database": model_node.get("database"),
+            "schema": model_node.get("schema"),
+            "description": model_node.get("description", ""),
             "relation_name": model_node.get("relation_name"),
-            "materialized": model_node.get("config", {}).get("materialized"),
-            "tags": model_node.get("tags", []),
-            "meta": model_node.get("meta", {}),
-            "path": model_node.get("original_file_path"),
-            "raw_code": model_node.get("raw_code", ""),
-            "compiled_code": model_node.get("compiled_code"),
-            "depends_on": model_node.get("depends_on", {}),
-            "refs": model_node.get("refs", []),
-            "sources": model_node.get("sources", []),
-            "fqn": model_node.get("fqn", []),
-            "access": model_node.get("access"),
-            "constraints": model_node.get("constraints", []),
-            "version": model_node.get("version"),
-            "latest_version": model_node.get("latest_version"),
-            "resource_id": resource_id,
-            "columns": columns,
-            "catalog_metadata": catalog_node.get("metadata", {}),
-            "stats": catalog_node.get("stats", {})
+            "columns": columns
         }
+        
+        # Additional fields when show_details=True
+        if show_details:
+            result.update({
+                "unique_id": unique_id,
+                "materialized": model_node.get("config", {}).get("materialized"),
+                "tags": model_node.get("tags", []),
+                "meta": model_node.get("meta", {}),
+                "path": model_node.get("original_file_path"),
+                "raw_code": model_node.get("raw_code", ""),
+                "compiled_code": model_node.get("compiled_code"),
+                "depends_on": model_node.get("depends_on", {}),
+                "refs": model_node.get("refs", []),
+                "sources": model_node.get("sources", []),
+                "fqn": model_node.get("fqn", []),
+                "access": model_node.get("access"),
+                "constraints": model_node.get("constraints", []),
+                "version": model_node.get("version"),
+                "latest_version": model_node.get("latest_version"),
+                "resource_id": resource_id,
+                "catalog_metadata": catalog_node.get("metadata", {}),
+                "stats": catalog_node.get("stats", {})
+            })
+        
+        return result
     
     async def _find_model_by_fqn(
         self, 
         database: str, 
         schema: str, 
         table: str, 
-        resource_id: Optional[str] = None
+        resource_id: Optional[str] = None,
+        show_details: bool = False
     ) -> Dict[str, Any]:
         """Find model by fully qualified name (database.schema.table)."""
         try:
@@ -688,7 +711,7 @@ class DataDiscoveryService:
                             (node.get("name", "").lower() == table.lower() or
                              relation_name.lower().endswith(f".{table.lower()}"))):
                             
-                            model_details = self._format_model_details(node, node_id, catalog, res_id)
+                            model_details = self._format_model_details(node, node_id, catalog, res_id, show_details)
                             return {
                                 "success": True,
                                 "data": model_details
