@@ -61,7 +61,7 @@
    {
      "mcpServers": {
        "data-discovery": {
-         "url": "url": "http://localhost:8000/mcp"
+         "url": "http://localhost:8000/mcp"
        }
      }
    }
