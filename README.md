@@ -37,7 +37,7 @@
    curl http://localhost:8000/health
    
    # List resources
-   curl http://localhost:8000/api/v1/discovery/resources
+   curl http://localhost:8000/api/v1/resources
    
    # API documentation
    open http://localhost:8000/docs
