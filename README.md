@@ -217,3 +217,13 @@ This project has been refactored from MCP-first to **REST API-first** architectu
 - 📖 **Auto Documentation** - OpenAPI/Swagger docs
 - 🧪 **Better Testing** - Standard REST API testing tools
 - 🔄 **Single Source of Truth** - No code duplication
+
+
+## 📦 Deployment
+
+### AWS CDK
+
+```bash
+cd infrastructure
+uv run cdk deploy
+```

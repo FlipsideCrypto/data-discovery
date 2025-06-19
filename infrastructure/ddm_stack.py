@@ -21,10 +21,10 @@ class DataDiscoveryStack(Stack):
 
         # Create Fargate Service
         fargate_service = ecs_patterns.ApplicationLoadBalancedFargateService(
-            self, "DataDiscoveryService",
+            self, "ddmService",
             cluster=cluster,
-            cpu=256,
-            memory_limit_mib=512,
+            cpu=1024,
+            memory_limit_mib=2048,
             desired_count=1,
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
                 image=ecs.ContainerImage.from_asset(
