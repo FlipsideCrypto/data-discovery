@@ -67,3 +67,4 @@ CLAUDE.local.md
 # CDK
 
 infrastructure/cdk.out/
+infrastructure/cdk.context.json

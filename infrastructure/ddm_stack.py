@@ -1,6 +1,7 @@
 # infrastructure/stack.py
 from aws_cdk import (
     Stack,
+    Tags,
     aws_ecs as ecs,
     aws_ecs_patterns as ecs_patterns,
     aws_ec2 as ec2,
@@ -10,22 +11,23 @@ from aws_cdk import (
 from constructs import Construct
 
 class DataDiscoveryStack(Stack):
+    """
+    Data Discovery Stack
+    """
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
+        self.stage = kwargs.pop("stage", "sbx") 
         super().__init__(scope, id, **kwargs)
 
-        # Create VPC
-        vpc = ec2.Vpc(self, "DataDiscoveryVPC", max_azs=2)
+        vpc = ec2.Vpc(self, f"ddm-{self.stage}-ecs-vpc", max_azs=2)
+        cluster = ecs.Cluster(self, f"ddm-{self.stage}-ecs-cluster", vpc=vpc)
 
-        # Create ECS Cluster
-        cluster = ecs.Cluster(self, "DataDiscoveryCluster", vpc=vpc)
-
-        # Create Fargate Service
         fargate_service = ecs_patterns.ApplicationLoadBalancedFargateService(
-            self, "ddmService",
+            self, f"ddm-{self.stage}-ecs-svc",
             cluster=cluster,
             cpu=1024,
             memory_limit_mib=2048,
             desired_count=1,
+            load_balancer_name=f"ddm-{self.stage}-alb",
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
                 image=ecs.ContainerImage.from_asset(
                     directory="../",
@@ -39,7 +41,7 @@ class DataDiscoveryStack(Stack):
                     "MAX_PROJECTS": "50"
                 },
                 log_driver=ecs.LogDrivers.aws_logs(
-                    stream_prefix="data-discovery",
+                    stream_prefix=f"ddm-{self.stage}",
                     log_retention=logs.RetentionDays.ONE_WEEK
                 )
             ),
@@ -54,3 +56,28 @@ class DataDiscoveryStack(Stack):
 
         # Output the ALB URL
         self.load_balancer_url = fargate_service.load_balancer.load_balancer_dns_name
+
+        self._add_tags(stage=self.stage)
+
+    def _add_tags(
+            self,
+            stage: str,
+            custom_tags: dict = None,
+        ) -> None:
+            """
+            Adds tags to all constructs/resources in the stack
+            """
+            stack = Stack.of(self)
+
+            project_tags = {
+                "owner": "data-platform",
+                "project": "ddm",
+                "environment": stage,
+            }
+
+            if custom_tags:
+                project_tags.update(custom_tags)
+
+            # Add the tags to the stack
+            for key, value in project_tags.items():
+                Tags.of(stack).add(key, value)
