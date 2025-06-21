@@ -271,9 +271,29 @@ uv run cdk deploy
 
 ## 📦 Deployment
 
-### AWS CDK
+### Manual deployment process
 
-```bash
+- Configure your [AWS CLI](https://aws.amazon.com/cli/) to point to [serverless-stg](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-authentication.html)
+
+- To manage multiple `aws cli` `profiles` install the [oh-my-zsh aws](https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/aws) `asp` plugin
+
+```sh
+# Clear your aws profile
+asp
+
+# Activate your serverless-stg aws profile
+asp <STG_PROFILE_NAME>
+```
+
+### Deploy the project
+
+```sh
+# Configure your aws profile
+asp stg
+
+# Login to aws sso
+aws sso login
+
 cd infrastructure
 cdk deploy --all
 ```
