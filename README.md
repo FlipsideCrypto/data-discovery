@@ -7,6 +7,10 @@
 ### Prerequisites
 - [UV](https://docs.astral.sh/uv/getting-started/installation/) with `Python 3.10` or higher
 - Git
+- **GitHub Personal Access Token** (required for repository discovery)
+  - Create a token with `public_repo` scope at [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
+  - Set as environment variable: `export GITHUB_TOKEN=ghp_your_token_here`
+  - **Rate Limits**: Without token: 60 requests/hour, With token: 5,000 requests/hour
 
 ### 🔌 REST API (Primary)
 
@@ -45,7 +49,10 @@
    # Health check
    curl http://localhost:8000/health
    
-   # List resources
+   # Discover GitHub repositories and refresh cache
+   curl -X POST http://localhost:8000/api/v1/cache/refresh
+   
+   # List available resources (after cache refresh)
    curl http://localhost:8000/api/v1/resources
    
    # API documentation
@@ -104,10 +111,16 @@
 ## 📊 API Endpoints
 
 ### Core Discovery Endpoints
-- **`GET /api/v1/resources`** - List available dbt projects with filtering
+- **`GET /api/v1/resources`** - List available dbt projects (dynamically discovered from GitHub)
 - **`GET /api/v1/models`** - Search models by schema, level, or resource (defaults to level=gold)
 - **`GET /api/v1/models/{unique_id}`** - Get detailed model information
 - **`GET /api/v1/descriptions/{doc_name}`** - Retrieve documentation blocks
+
+### Cache Management
+- **`POST /api/v1/cache/refresh`** - Discover GitHub repositories and refresh cache
+  - **Automatic Discovery**: Scans FlipsideCrypto organization for `*-models` repositories
+  - **Parameters**: `resource_ids` (optional), `force` (optional)
+  - **Response**: Discovery summary + cache refresh results
 
 ### Additional Endpoints
 - **`GET /health`** - Health check and status
@@ -117,10 +130,11 @@
 
 ### MCP Tools (Auto-Generated)
 When accessed via MCP clients, the REST endpoints are automatically exposed as tools:
-- **`get_resources`** - List available dbt projects
+- **`get_resources`** - List dynamically discovered dbt projects
 - **`get_models`** - Search models across projects
 - **`get_model_by_id`** - Get model details by unique ID
 - **`get_description`** - Documentation blocks with context
+- **`refresh_cache`** - Discover repositories and refresh cache
 
 ## ⚙️ Configuration
 
@@ -134,12 +148,19 @@ API_PORT=8000              # Server port
 
 # Application Settings  
 DEBUG_MODE=false           # Enable debug logging
-DEPLOYMENT_MODE=api        # Deployment mode (api/desktop)
+DEPLOYMENT_MODE=api        # Deployment mode (api/desktop/local)
 LOG_LEVEL=INFO            # Logging level
 
+# Cache Settings
+CACHE_DIR=target          # Cache directory for artifacts
+CACHE_TTL_SECONDS=86400   # Cache time-to-live (24 hours)
+
 # Resource Limits
-MAX_FILE_SIZE=10485760    # Max file size (10MB)
-MAX_PROJECTS=50           # Max projects to load simultaneously
+MAX_FILE_SIZE=52428800    # Max file size (50MB)
+MAX_PROJECTS=5            # Max projects to load simultaneously
+
+# GitHub Integration
+GITHUB_TOKEN=ghp_xxx      # GitHub Personal Access Token (required for repository discovery)
 ```
 
 ### Deployment Modes
@@ -171,7 +192,21 @@ MAX_PROJECTS=50           # Max projects to load simultaneously
 
 3. **Empty Results from API**
    - No project artifacts cached yet
-   - Check resource configuration in `src/data_discovery/resources/`
+   - Run cache refresh: `curl -X POST http://localhost:8000/api/v1/cache/refresh`
+   - Check if FlipsideCrypto repositories have `/docs` branch
+
+4. **GitHub Rate Limit Errors**
+   ```bash
+   # Error: "rate limit exceeded" or "403 Forbidden"
+   # Solution: Set GitHub Personal Access Token
+   export GITHUB_TOKEN=ghp_your_token_here
+   
+   # Or add to .env file
+   echo "GITHUB_TOKEN=ghp_your_token_here" >> .env
+   
+   # Verify token is working
+   curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/rate_limit
+   ```
 
 ### Development
 ```bash
@@ -185,6 +220,63 @@ data-discovery
 tail -f ~/.cache/data-discovery/claude-server.log
 ```
 
+## 🔄 Cache Management
+
+The system uses a dynamic discovery and caching approach for FlipsideCrypto repositories:
+
+### Cache Refresh Workflow
+1. **GitHub Discovery**: Scans FlipsideCrypto organization for `*-models` repositories
+2. **Docs Validation**: Checks each repository for `/docs` branch availability
+3. **Cache Update**: Refreshes cached dbt artifacts (manifest.json, catalog.json)
+4. **Status Logging**: Updates CSV log with cache status and project metadata
+
+### Cache Refresh Examples
+
+```bash
+# Refresh all discovered projects
+curl -X POST http://localhost:8000/api/v1/cache/refresh
+
+# Refresh specific projects only
+curl -X POST http://localhost:8000/api/v1/cache/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"resource_ids": ["ethereum-models", "bitcoin-models"]}'
+
+# Force refresh (ignore TTL)
+curl -X POST http://localhost:8000/api/v1/cache/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"force": true}'
+```
+
+### Response Format
+```json
+{
+  "success": true,
+  "data": {
+    "ethereum-models": true,
+    "bitcoin-models": false
+  },
+  "message": "Discovery + cache refresh completed: 45 repositories discovered, 2/2 cache refreshes successful",
+  "discovery_summary": {
+    "total_discovered": 45,
+    "projects_with_docs": 38,
+    "projects_without_docs": 7,
+    "discovery_completed": true
+  }
+}
+```
+
+### Scheduling Cache Refresh
+You can schedule cache refreshes using cron or external systems:
+
+```bash
+# Example cron job (every 6 hours)
+0 */6 * * * curl -X POST http://localhost:8000/api/v1/cache/refresh
+
+# CI/CD trigger after dbt deployments
+curl -X POST http://your-server:8000/api/v1/cache/refresh \
+  -d '{"resource_ids": ["project-models"], "force": true}'
+```
+
 ## 🏗️ Architecture
 
 ### REST API-First Design
@@ -195,7 +287,9 @@ tail -f ~/.cache/data-discovery/claude-server.log
 
 ### Key Components
 - `src/data_discovery/main.py` - FastAPI application entry point with MCP integration
-- `src/data_discovery/core/service.py` - Core business logic
+- `src/data_discovery/project_manager.py` - Core project management with dynamic discovery
+- `src/data_discovery/core/project_discovery.py` - GitHub repository discovery and CSV logging
+- `src/data_discovery/core/service.py` - Business logic layer
 - `src/data_discovery/api/discovery/` - REST endpoint implementations
 - `src/data_discovery/mcp/` - MCP integration module
 
@@ -211,13 +305,25 @@ tail -f ~/.cache/data-discovery/claude-server.log
 
 ## 📋 Recent Changes
 
+### Dynamic GitHub Discovery System
+- **Automatic Project Discovery**: System now automatically discovers FlipsideCrypto `*-models` repositories
+- **Cache Management**: New `POST /cache/refresh` endpoint combines discovery + cache refresh
+- **No Manual Configuration**: Eliminates need for static CSV configuration files
+- **Performance Optimization**: Client requests always use cached data for fast response times
+- **Background Refresh**: Separate cache refresh process can be scheduled or triggered on-demand
+
+### Architecture Simplification
+- **Removed Resources Module**: Eliminated 400+ lines of CSV-based legacy code
+- **Direct ProjectManager Access**: Simplified architecture without wrapper classes
+- **Single Source of Truth**: All functionality now handled by ProjectManager with dynamic discovery
+
 ### API Filtering Updates
-- **Default Level**: `/models` endpoint now defaults to `level=gold` for higher quality results
-- **Utility Model Filtering**: Models from `fsc_utils` package are excluded from gold-level results
-- **Quality Focus**: Gold level now returns curated, production-ready models only
+- **Default Level**: `/models` endpoint defaults to `level=gold` for higher quality results
+- **Utility Model Filtering**: Models from `fsc_utils` package excluded from gold-level results
+- **Quality Focus**: Gold level returns curated, production-ready models only
 
 ### MCP Transport Limitations
 - **fastapi_mcp**: Currently supports SSE transport only
 - **Claude Desktop**: Requires stdio transport (incompatible with fastapi_mcp)
-- **Workaround**: Use standalone MCP server (`src/data_discovery/server.py`) for Claude Desktop
+- **Workaround**: Use standalone MCP server for Claude Desktop
 - **Future**: stdio transport support may be added to fastapi_mcp
