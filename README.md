@@ -2,6 +2,10 @@
 
 **REST API-first** data discovery system for dbt projects across blockchain datasets. Provides FastAPI endpoints with optional MCP tool integration for AI agents.
 
+## Architecture Overview
+
+![Architecture Overview](./assets/architecture.png)
+
 ## 🚀 Quickstart
 
 ### Prerequisites
