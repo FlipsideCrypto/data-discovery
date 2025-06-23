@@ -9,13 +9,12 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Union
-import logging
+from loguru import logger
 
 import aiohttp
 
-from .resources import resource_registry
+from .core.project_discovery import ProjectDiscoveryManager
 
-logger = logging.getLogger(__name__)
 
 
 class ProjectManagerConfig:
@@ -49,6 +48,14 @@ class ProjectManager:
     def __init__(self, config: Optional[ProjectManagerConfig] = None):
         self.config = config or ProjectManagerConfig()
         self._ensure_cache_directory()
+        
+        # Initialize project discovery manager
+        github_token = os.getenv('GITHUB_TOKEN')
+        self.discovery_manager = ProjectDiscoveryManager(
+            self.config.CACHE_DIR, 
+            github_token=github_token,
+            cache_ttl_seconds=self.config.CACHE_TTL_SECONDS
+        )
     
     def _ensure_cache_directory(self):
         """Ensure cache directory exists."""
@@ -68,7 +75,7 @@ class ProjectManager:
     def _validate_resource_ids(self, resource_ids: Union[str, List[str], None]) -> List[str]:
         """Validate and normalize resource IDs."""
         # Get available resource IDs for error messages
-        available_resource_ids = resource_registry.list_project_ids()
+        available_resource_ids = self.list_project_ids()
         
         # Handle null/None case - treat as empty (search all resources)
         if resource_ids is None:
@@ -76,9 +83,6 @@ class ProjectManager:
         
         if isinstance(resource_ids, str):
             resource_ids = [resource_ids]
-        
-        if not isinstance(resource_ids, list):
-            raise ValueError(f"resource_ids must be a string or list of strings. Available resources: {available_resource_ids}")
         
         if len(resource_ids) == 0:
             # Empty list is valid - means search all resources
@@ -115,7 +119,7 @@ class ProjectManager:
         project_name = parts[1]
         
         # Get available project IDs and try to match
-        available_project_ids = resource_registry.list_project_ids()
+        available_project_ids = self.list_project_ids()
         
         # Try exact match first
         if project_name in available_project_ids:
@@ -135,7 +139,7 @@ class ProjectManager:
     def _validate_unique_id_project(self, unique_id: str) -> str:
         """Validate that the project in unique_id exists and return project ID."""
         project_id = self._extract_project_from_unique_id(unique_id)
-        available_project_ids = resource_registry.list_project_ids()
+        available_project_ids = self.list_project_ids()
         
         if not project_id:
             raise ValueError(f"Cannot extract valid project from unique_id '{unique_id}'. Available projects: {available_project_ids}")
@@ -165,20 +169,24 @@ class ProjectManager:
             with open(meta_path, 'r') as f:
                 meta = json.load(f)
             
+            # Check if cache has error status
+            if meta.get('status') == 'error':
+                return False
+            
             cached_time = datetime.fromisoformat(meta['cached_at'])
             now = datetime.now(timezone.utc)
             age_seconds = (now - cached_time).total_seconds()
+            ttl_seconds = self.config.CACHE_TTL_SECONDS
             
-            return age_seconds < self.config.CACHE_TTL_SECONDS
+            is_valid = age_seconds < ttl_seconds
+            
+            return is_valid
         except Exception as e:
             logger.warning(f"Error reading cache metadata for {project_id}: {e}")
             return False
     
     def _load_cached_artifacts(self, project_id: str) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
-        """Load artifacts from cache if valid."""
-        if not self._is_cache_valid(project_id):
-            return None
-        
+        """Load artifacts from cache regardless of age (for client requests)."""
         try:
             manifest_path = self._get_cache_file_path(project_id, "manifest")
             catalog_path = self._get_cache_file_path(project_id, "catalog")
@@ -238,29 +246,56 @@ class ProjectManager:
                 json.dump(catalog, f, indent=2)
             
             # Save cache metadata
-            meta_path = self._get_cache_meta_path(project_id)
-            cache_meta = {
-                "project_id": project_id,
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "ttl_seconds": self.config.CACHE_TTL_SECONDS,
-                "files": {
-                    "manifest": str(manifest_path),
-                    "catalog": str(catalog_path)
-                }
-            }
-            
-            with open(meta_path, 'w') as f:
-                json.dump(cache_meta, f, indent=2)
+            self._save_cache_metadata(project_id, success=True, error=None)
             
             logger.info(f"Cached artifacts for project {project_id}")
             
         except Exception as e:
             logger.error(f"Error caching artifacts for {project_id}: {e}")
     
+    def _save_cache_metadata(self, project_id: str, success: bool, error: Optional[str] = None):
+        """Save cache metadata for both successful and failed operations."""
+        try:
+            cache_dir = self._get_cache_path(project_id)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            
+            meta_path = self._get_cache_meta_path(project_id)
+            cache_meta = {
+                "project_id": project_id,
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                "ttl_seconds": self.config.CACHE_TTL_SECONDS,
+                "status": "success" if success else "error",
+                "error": error
+            }
+            
+            if success:
+                # Add file paths for successful caches
+                manifest_path = self._get_cache_file_path(project_id, "manifest")
+                catalog_path = self._get_cache_file_path(project_id, "catalog")
+                cache_meta["files"] = {
+                    "manifest": str(manifest_path),
+                    "catalog": str(catalog_path)
+                }
+            
+            with open(meta_path, 'w') as f:
+                json.dump(cache_meta, f, indent=2)
+            
+            # Update CSV log with cache status
+            self.discovery_manager.update_cache_status(
+                resource_id=project_id,
+                status="success" if success else "error",
+                error=error
+            )
+            
+            logger.info(f"Saved cache metadata for project {project_id}: {cache_meta['status']}")
+            
+        except Exception as e:
+            logger.error(f"Error saving cache metadata for {project_id}: {e}")
+    
     async def _fetch_github_artifacts(self, project_id: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Fetch artifacts from GitHub repository."""
         
-        project_data = resource_registry.get_project_by_id(project_id)
+        project_data = self.get_project_by_id(project_id)
         
         if project_data["type"] != "github":
             raise ValueError(f"Project {project_id} is not a GitHub project")
@@ -313,7 +348,7 @@ class ProjectManager:
     
     def _load_local_artifacts(self, project_id: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Load artifacts from local filesystem."""
-        project_data = resource_registry.get_project_by_id(project_id)
+        project_data = self.get_project_by_id(project_id)
         
         if project_data["type"] != "local":
             raise ValueError(f"Project {project_id} is not a local project")
@@ -349,21 +384,22 @@ class ProjectManager:
         
         # If no resource IDs specified (empty list), load all available resources
         if not resource_ids:
-            resource_ids = resource_registry.list_project_ids()
+            resource_ids = self.list_project_ids()
             logger.info(f"No resource_ids specified, loading all available resources: {resource_ids}")
         
         artifacts = {}
         
         for project_id in resource_ids:
             try:
-                # Try cache first
+                # Always use cache for client requests (no expiry check)
                 cached_artifacts = self._load_cached_artifacts(project_id)
                 if cached_artifacts:
                     artifacts[project_id] = cached_artifacts
                     continue
                 
-                # Load from source
-                project_data = resource_registry.get_project_by_id(project_id)
+                # If no cache exists, we need initial data - load from source
+                logger.info(f"No cached artifacts found for {project_id}, loading from source for initial cache")
+                project_data = self.get_project_by_id(project_id)
                 
                 if project_data["type"] == "local":
                     manifest, catalog = self._load_local_artifacts(project_id)
@@ -382,7 +418,7 @@ class ProjectManager:
                 continue
         
         if not artifacts:
-            available_projects = resource_registry.list_project_ids()
+            available_projects = self.list_project_ids()
             if not resource_ids:
                 raise RuntimeError(f"Failed to load artifacts for any available resources: {available_projects}")
             else:
@@ -390,10 +426,128 @@ class ProjectManager:
         
         return artifacts
     
+    async def refresh_cache(self, resource_ids: Union[str, List[str], None] = None, force: bool = False) -> Dict[str, Dict[str, Any]]:
+        """Refresh cache for specified resources or all resources.
+        
+        Args:
+            resource_ids: Resource IDs to refresh. If None, refreshes all resources.
+            force: If True, refreshes regardless of cache validity. If False, only refreshes expired caches.
+            
+        Returns:
+            Dictionary mapping resource_id to result info with keys: success, action, error.
+            Action can be: 'skipped' (valid cache), 'refreshed' (downloaded new data), 'failed' (error occurred).
+        """
+        # Validate resource IDs
+        resource_ids = self._validate_resource_ids(resource_ids)
+        
+        # If no resource IDs specified, refresh all available resources
+        if not resource_ids:
+            resource_ids = self.list_project_ids()
+            logger.info(f"No resource_ids specified for cache refresh, refreshing all available resources: {resource_ids}")
+        
+        refresh_results = {}
+        
+        for project_id in resource_ids:
+            try:
+                # Check if refresh is needed (unless forced)
+                cache_valid = self._is_cache_valid(project_id)
+                
+                if not force and cache_valid:
+                    logger.info(f"Cache for {project_id} is still valid, skipping refresh")
+                    refresh_results[project_id] = {"success": True, "action": "skipped", "error": None}
+                    continue
+                
+                if force:
+                    logger.info(f"Force refresh enabled - refreshing cache for project {project_id}")
+                else:
+                    logger.info(f"Cache expired or invalid - refreshing cache for project {project_id}")
+                project_data = self.get_project_by_id(project_id)
+                
+                if project_data["type"] == "local":
+                    manifest, catalog = self._load_local_artifacts(project_id)
+                elif project_data["type"] == "github":
+                    manifest, catalog = await self._fetch_github_artifacts(project_id)
+                else:
+                    raise ValueError(f"Unknown project type: {project_data['type']}")
+                
+                # Cache the refreshed artifacts
+                self._cache_artifacts(project_id, manifest, catalog)
+                refresh_results[project_id] = {"success": True, "action": "refreshed", "error": None}
+                logger.info(f"Successfully refreshed cache for project {project_id}")
+                
+            except Exception as e:
+                logger.error(f"Failed to refresh cache for project {project_id}: {e}")
+                # Save error metadata even for failed refreshes
+                self._save_cache_metadata(project_id, success=False, error=str(e))
+                refresh_results[project_id] = {"success": False, "action": "failed", "error": str(e)}
+        
+        return refresh_results
+    
+    async def discover_projects(self, skip_valid_cache: bool = False, force_refresh: bool = False, specific_projects: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Discover FlipsideCrypto projects from GitHub.
+        
+        Args:
+            skip_valid_cache: If True, skip docs branch checks for projects with valid cache
+            force_refresh: If True, check all projects regardless of cache (overrides skip_valid_cache)
+            specific_projects: If provided, only discover these specific project IDs
+        """
+        return await self.discovery_manager.discover_flipside_projects(
+            skip_valid_cache=skip_valid_cache,
+            force_refresh=force_refresh,
+            specific_projects=specific_projects
+        )
+    
+    def get_available_projects(self, require_cache: bool = False) -> List[Dict[str, Any]]:
+        """Get list of available projects based on discovery and cache status."""
+        return self.discovery_manager.get_available_projects(
+            require_cache=require_cache,
+            require_docs_branch=True
+        )
+    
+    def get_cache_status_summary(self) -> Dict[str, Any]:
+        """Get summary of cache status across all projects."""
+        return self.discovery_manager.get_cache_status_summary()
+    
+    def list_project_ids(self) -> List[str]:
+        """Get list of all project IDs."""
+        available_projects = self.discovery_manager.get_available_projects(
+            require_cache=False,
+            require_docs_branch=True
+        )
+        return [project['resource_id'] for project in available_projects]
+    
+    def get_project_by_id(self, project_id: str) -> Dict[str, Any]:
+        """Get project data by project ID."""
+        available_projects = self.discovery_manager.get_available_projects(
+            require_cache=False,
+            require_docs_branch=True
+        )
+        
+        for project_data in available_projects:
+            if project_data['resource_id'] == project_id:
+                # Convert to expected format for API compatibility
+                return {
+                    'id': project_data['resource_id'],
+                    'name': project_data['name'],
+                    'blockchain': project_data['blockchain'],
+                    'category': project_data['category'],
+                    'type': 'github',  # All discovered projects are GitHub
+                    'location': project_data['location'],
+                    'target_branch': 'docs',
+                    'aliases': project_data['aliases'].split('|') if project_data['aliases'] else [],
+                    'description': f"dbt models for {project_data['blockchain']} blockchain data analysis and exploration",
+                    'artifact_location': {
+                        'manifest': f"https://raw.githubusercontent.com/{project_data['location']}/docs/docs/manifest.json",
+                        'catalog': f"https://raw.githubusercontent.com/{project_data['location']}/docs/docs/catalog.json"
+                    }
+                }
+        
+        raise ValueError(f"Unknown project ID: {project_id}")
+    
     async def find_model_in_projects(self, model_name: str, resource_ids: Optional[Union[str, List[str]]] = None) -> List[Dict[str, Any]]:
         """Find model across specified resources or all resources."""
         if resource_ids is None:
-            all_resources = resource_registry.list_project_ids()
+            all_resources = self.list_project_ids()
             if len(all_resources) > self.config.MAX_PROJECTS:
                 raise ValueError(f"Too many resources available ({len(all_resources)}). Please specify resource_id to search specific projects. Available resources: {all_resources[:10]}{'...' if len(all_resources) > 10 else ''}")
             resource_ids = all_resources

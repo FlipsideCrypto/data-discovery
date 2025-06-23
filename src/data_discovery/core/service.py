@@ -5,7 +5,6 @@ from typing import Dict, Any, List, Optional, Tuple
 from loguru import logger
 
 from data_discovery.project_manager import project_manager
-from data_discovery.resources import resource_registry
 
 
 class DataDiscoveryService:
@@ -20,7 +19,7 @@ class DataDiscoveryService:
         """Get all available dbt project resources."""
         try:
             # Get all available resources from project manager
-            project_ids = resource_registry.list_project_ids()
+            project_ids = project_manager.list_project_ids()
             
             if not project_ids:
                 return {
@@ -33,7 +32,7 @@ class DataDiscoveryService:
             all_resources = []
             for project_id in project_ids:
                 try:
-                    project_data = resource_registry.get_project_by_id(project_id)
+                    project_data = project_manager.get_project_by_id(project_id)
                     all_resources.append(project_data)
                 except Exception as e:
                     logger.warning(f"Failed to load project {project_id}: {e}")
@@ -116,7 +115,7 @@ class DataDiscoveryService:
             if resource_id:
                 requested_resources = [resource_id] if isinstance(resource_id, str) else resource_id
             else:
-                all_resources = resource_registry.list_project_ids()
+                all_resources = project_manager.list_project_ids()
                 requested_resources = all_resources
                 logger.info(f"Cross-project search across {len(requested_resources)} projects")
             
@@ -678,7 +677,7 @@ class DataDiscoveryService:
             if resource_id:
                 search_resources = [resource_id] if isinstance(resource_id, str) else resource_id
             else:
-                search_resources = resource_registry.list_project_ids()
+                search_resources = project_manager.list_project_ids()
             
             # Load artifacts and search
             for res_id in search_resources:
