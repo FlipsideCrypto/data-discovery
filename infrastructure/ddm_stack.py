@@ -18,7 +18,7 @@ class DataDiscoveryStack(Stack):
         self.stage = kwargs.pop("stage", "sbx") 
         super().__init__(scope, id, **kwargs)
 
-        vpc = ec2.Vpc(self, f"ddm-{self.stage}-ecs-vpc", max_azs=2)
+        vpc = ec2.Vpc(self, f"ddm-{self.stage}-ecs-vpc", max_azs=2, nat_gateways=1)
         cluster = ecs.Cluster(self, f"ddm-{self.stage}-ecs-cluster", vpc=vpc)
 
         fargate_service = ecs_patterns.ApplicationLoadBalancedFargateService(
