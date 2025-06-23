@@ -60,7 +60,25 @@ async def refresh_cache(
     try:
         # Step 1: Always start with discovery to get latest repository list
         logger.info("Step 1: Starting GitHub repository discovery")
-        discovered_projects = await project_manager.discover_projects()
+        
+        # Normalize resource_ids for discovery
+        specific_projects = None
+        if request.resource_ids:
+            if isinstance(request.resource_ids, list):
+                specific_projects = request.resource_ids
+            else:
+                specific_projects = [request.resource_ids]
+            logger.info(f"Discovery will be limited to specific projects: {specific_projects}")
+        else:
+            logger.info("Discovery will scan all FlipsideCrypto repositories")
+        
+        # Optimization: skip docs branch checks for projects with valid cache unless force=True
+        # If specific resource_ids are requested, only discover those projects
+        discovered_projects = await project_manager.discover_projects(
+            skip_valid_cache=True,
+            force_refresh=request.force,
+            specific_projects=specific_projects
+        )
         
         total_discovered = len(discovered_projects)
         projects_with_docs = sum(1 for p in discovered_projects if p.get('has_docs_branch') == 'True')
@@ -77,28 +95,36 @@ async def refresh_cache(
         
         # Step 2: Refresh cache for specified or all discovered resources
         logger.info("Step 2: Starting cache refresh")
-        logger.debug(f"Calling project_manager.refresh_cache with resource_ids={request.resource_ids}, force={request.force}")
         
         refresh_results = await project_manager.refresh_cache(
             resource_ids=request.resource_ids,
             force=request.force
         )
         
-        logger.debug(f"Refresh results: {refresh_results}")
+        # Count different types of results
+        skipped = sum(1 for result in refresh_results.values() if result.get("action") == "skipped")
+        refreshed = sum(1 for result in refresh_results.values() if result.get("action") == "refreshed")
+        failed = sum(1 for result in refresh_results.values() if result.get("action") == "failed")
         
-        # Count successful and failed refreshes
-        successful = sum(1 for success in refresh_results.values() if success)
-        total = len(refresh_results)
-        failed = total - successful
+        # Build more accurate message
+        message_parts = [f"Discovery + cache refresh completed: {total_discovered} repositories discovered"]
         
-        message = f"Discovery + cache refresh completed: {total_discovered} repositories discovered, {successful}/{total} cache refreshes successful"
+        if refreshed > 0:
+            message_parts.append(f"{refreshed} cache(s) refreshed")
+        if skipped > 0:
+            message_parts.append(f"{skipped} cache(s) skipped (not expired)")
         if failed > 0:
-            message += f", {failed} failed"
+            message_parts.append(f"{failed} cache(s) failed")
+            
+        message = ", ".join(message_parts)
         
         logger.info(f"Discovery + cache refresh workflow completed successfully - {message}")
         
+        # Overall success is True if no failures occurred (skipped and refreshed are both successful outcomes)
+        overall_success = failed == 0
+        
         return RefreshCacheResponse(
-            success=True,
+            success=overall_success,
             data=refresh_results,
             message=message,
             discovery_summary=discovery_summary

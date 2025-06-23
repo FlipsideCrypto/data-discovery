@@ -12,7 +12,7 @@ import os
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional
 from loguru import logger
 
 import aiohttp
@@ -22,9 +22,10 @@ import aiohttp
 class ProjectDiscoveryManager:
     """Manages dynamic project discovery and CSV logging."""
     
-    def __init__(self, cache_dir: str, csv_log_path: Optional[str] = None, github_token: Optional[str] = None):
+    def __init__(self, cache_dir: str, csv_log_path: Optional[str] = None, github_token: Optional[str] = None, cache_ttl_seconds: int = 86400):
         self.cache_dir = Path(cache_dir)
         self.github_token = github_token or os.getenv('GITHUB_TOKEN')
+        self.cache_ttl_seconds = cache_ttl_seconds
         
         # Default CSV log path in cache directory
         if csv_log_path is None:
@@ -103,6 +104,30 @@ class ProjectDiscoveryManager:
         except Exception as e:
             logger.error(f"Error updating cache status for {resource_id}: {e}")
     
+    def _is_cache_valid(self, project_id: str) -> bool:
+        """Check if cached artifacts are still valid for a project."""
+        cache_meta_path = self.cache_dir / project_id / "cache_meta.json"
+        
+        if not cache_meta_path.exists():
+            return False
+        
+        try:
+            with open(cache_meta_path, 'r') as f:
+                meta = json.load(f)
+            
+            # Check if cache has error status
+            if meta.get('status') == 'error':
+                return False
+            
+            cached_time = datetime.fromisoformat(meta['cached_at'])
+            now = datetime.now(timezone.utc)
+            age_seconds = (now - cached_time).total_seconds()
+            
+            return age_seconds < self.cache_ttl_seconds
+        except Exception as e:
+            logger.warning(f"Error reading cache metadata for {project_id}: {e}")
+            return False
+    
     def _generate_name_from_id(self, resource_id: str) -> str:
         """Generate a human-readable name from resource ID."""
         if resource_id.endswith('-models'):
@@ -116,8 +141,14 @@ class ProjectDiscoveryManager:
             return resource_id.replace('-models', '')
         return resource_id
     
-    async def discover_flipside_projects(self) -> List[Dict[str, Any]]:
-        """Discover FlipsideCrypto repositories that follow the <project>-models pattern."""
+    async def discover_flipside_projects(self, skip_valid_cache: bool = False, force_refresh: bool = False, specific_projects: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Discover FlipsideCrypto repositories that follow the <project>-models pattern.
+        
+        Args:
+            skip_valid_cache: If True, skip docs branch checks for projects with valid cache
+            force_refresh: If True, check all projects regardless of cache (overrides skip_valid_cache)
+            specific_projects: If provided, only discover these specific project IDs
+        """
         logger.info("Starting FlipsideCrypto project discovery")
         
         try:
@@ -128,9 +159,51 @@ class ProjectDiscoveryManager:
             model_repos = [repo for repo in repos if repo['name'].endswith('-models')]
             logger.info(f"Found {len(model_repos)} potential model repositories")
             
+            # Filter to specific projects if requested
+            if specific_projects:
+                model_repos = [repo for repo in model_repos if repo['name'] in specific_projects]
+                logger.info(f"Filtered to {len(model_repos)} specific requested repositories: {[r['name'] for r in model_repos]}")
+            
+            # Optimization: if skip_valid_cache is enabled and force_refresh is False,
+            # skip docs branch checks for projects with valid cache
+            repos_to_check = []
+            repos_skipped_cache = []
+            
+            if skip_valid_cache and not force_refresh:
+                for repo in model_repos:
+                    if self._is_cache_valid(repo['name']):
+                        repos_skipped_cache.append(repo)
+                        logger.debug(f"Skipping docs branch check for {repo['name']} (valid cache)")
+                    else:
+                        repos_to_check.append(repo)
+                
+                logger.info(f"Cache optimization: checking docs branch for {len(repos_to_check)} repos, skipping {len(repos_skipped_cache)} with valid cache")
+            else:
+                repos_to_check = model_repos
+                logger.info(f"Checking docs branch for all {len(repos_to_check)} repositories")
+            
             # Check which ones have /docs branch
             valid_projects = []
-            for repo in model_repos:
+            
+            # First, add projects we skipped due to valid cache (we know they're valid)
+            for repo in repos_skipped_cache:
+                project_data = {
+                    'resource_id': repo['name'],
+                    'name': self._generate_name_from_id(repo['name']),
+                    'blockchain': self._extract_blockchain_from_id(repo['name']),
+                    'category': self._categorize_blockchain(self._extract_blockchain_from_id(repo['name'])),
+                    'aliases': self._generate_aliases(repo['name']),
+                    'location': repo['full_name'],
+                    'cached_at': '',
+                    'status': '',
+                    'error': '',
+                    'discovered_at': datetime.now(timezone.utc).isoformat(),
+                    'has_docs_branch': 'True'  # We assume valid cache means docs branch exists
+                }
+                valid_projects.append(project_data)
+            
+            # Now check docs branch for remaining repos
+            for repo in repos_to_check:
                 has_docs = await self._check_docs_branch(repo['full_name'])
                 
                 project_data = {
@@ -273,10 +346,10 @@ class ProjectDiscoveryManager:
     def _categorize_blockchain(self, blockchain: str) -> str:
         """Categorize blockchain by type."""
         categories = {
-            'l1': ['bitcoin', 'ethereum', 'solana', 'avalanche', 'near', 'flow', 'stellar', 'ton', 'aleo', 'aptos', 'movement'],
-            'evm': ['arbitrum', 'optimism', 'polygon', 'base', 'bsc', 'gnosis', 'mantle', 'blast', 'aurora', 'boba', 'ronin', 'ink', 'swell', 'kaia', 'rise', 'monad', 'core', 'mezo'],
+            'l1': ['bitcoin', 'avalanche', 'near', 'flow', 'stellar', 'ton', 'aleo', 'aptos', 'movement'],
+            'evm': ['ethereum', 'arbitrum', 'optimism', 'polygon', 'base', 'bsc', 'gnosis', 'mantle', 'blast', 'aurora', 'boba', 'ronin', 'ink', 'swell', 'kaia', 'rise', 'monad', 'core', 'mezo'],
             'ibc': ['cosmos', 'osmosis', 'terra', 'thorchain', 'axelar', 'maya'],
-            'svm': ['eclipse'],
+            'svm': ['solana', 'eclipse'],
             'multi-chain': ['crosschain', 'external'],
             'internal': ['kairos']
         }

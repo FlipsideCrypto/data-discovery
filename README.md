@@ -35,13 +35,13 @@
 2. **Start the API server**:
    ```bash
    # Using the console script (recommended)
-   data-discovery
+   uv run data-discovery
    
    # Development server with hot reload
-   uv run uvicorn src.data_discovery.main:app --reload --host 0.0.0.0 --port 8000
+   uv run uvicorn data_discovery.main:app --reload --host 0.0.0.0 --port 8000
    
    # Or using the main module directly
-   uv run python src/data_discovery/main.py
+   uv run python -m data_discovery.main
    ```
 
 3. **Test the API**:
@@ -211,10 +211,10 @@ GITHUB_TOKEN=ghp_xxx      # GitHub Personal Access Token (required for repositor
 ### Development
 ```bash
 # Run with hot reload
-uv run uvicorn src.data_discovery.main:app --reload
+uv run uvicorn data_discovery.main:app --reload
 
 # Test the console script
-data-discovery
+uv run data-discovery
 
 # Check logs
 tail -f ~/.cache/data-discovery/claude-server.log

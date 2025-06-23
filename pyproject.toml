@@ -21,6 +21,9 @@ dependencies = [
     "uvicorn>=0.34.3",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/data_discovery"]
+
 [project.scripts]
 data-discovery = "data_discovery.main:main"
 
