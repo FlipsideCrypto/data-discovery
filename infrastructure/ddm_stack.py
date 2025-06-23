@@ -1,4 +1,5 @@
 # infrastructure/stack.py
+import os
 from aws_cdk import (
     Stack,
     Tags,
@@ -38,7 +39,8 @@ class DataDiscoveryStack(Stack):
                     "DEPLOYMENT_MODE": "api",
                     "DEBUG_MODE": "false",
                     "LOG_LEVEL": "INFO",
-                    "MAX_PROJECTS": "50"
+                    "MAX_PROJECTS": "50",
+                    "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")
                 },
                 log_driver=ecs.LogDrivers.aws_logs(
                     stream_prefix=f"ddm-{self.stage}",
