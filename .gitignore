@@ -63,3 +63,8 @@ target/
 CLAUDE.local.md
 .claude/context
 .claude/local
+
+# CDK
+
+infrastructure/cdk.out/
+infrastructure/cdk.context.json

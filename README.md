@@ -2,6 +2,10 @@
 
 **REST API-first** data discovery system for dbt projects across blockchain datasets. Provides FastAPI endpoints with optional MCP tool integration for AI agents.
 
+## Architecture Overview
+
+![Architecture Overview](./assets/architecture.png)
+
 ## 🚀 Quickstart
 
 ### Prerequisites
@@ -322,8 +326,101 @@ curl -X POST http://your-server:8000/api/v1/cache/refresh \
 - **Utility Model Filtering**: Models from `fsc_utils` package excluded from gold-level results
 - **Quality Focus**: Gold level returns curated, production-ready models only
 
+### Benefits
+- 🚀 **Better Performance** - Direct REST API access
+- 🔧 **Easier Integration** - Standard HTTP endpoints
+- 📖 **Auto Documentation** - OpenAPI/Swagger docs
+- 🧪 **Better Testing** - Standard REST API testing tools
+- 🔄 **Single Source of Truth** - No code duplication
+
+
+## 📦 Deployment
+
+### AWS CDK
+
+```bash
+cd infrastructure
+uv run cdk deploy
+```
 ### MCP Transport Limitations
 - **fastapi_mcp**: Currently supports SSE transport only
 - **Claude Desktop**: Requires stdio transport (incompatible with fastapi_mcp)
-- **Workaround**: Use standalone MCP server for Claude Desktop
+- **Workaround**: Use standalone MCP server (`src/data_discovery/server.py`) for Claude Desktop
 - **Future**: stdio transport support may be added to fastapi_mcp
+### What Changed
+- **Primary Interface**: REST API endpoints (was: MCP tools)
+- **MCP Integration**: Auto-generated from REST endpoints (was: manually coded)
+- **Single Codebase**: No duplication between REST and MCP (was: separate implementations)
+- **Entry Point**: `src/data_discovery/main.py` (was: `src/data_discovery/server.py`)
+
+### Backward Compatibility
+- ✅ **Legacy MCP server** still works (`src/data_discovery/server.py`)
+- ✅ **All MCP tools** available through REST API + fastapi_mcp
+- ✅ **Same functionality** with improved architecture
+- ✅ **Claude Desktop** integration maintained
+
+### Benefits
+- 🚀 **Better Performance** - Direct REST API access
+- 🔧 **Easier Integration** - Standard HTTP endpoints
+- 📖 **Auto Documentation** - OpenAPI/Swagger docs
+- 🧪 **Better Testing** - Standard REST API testing tools
+- 🔄 **Single Source of Truth** - No code duplication
+
+
+## 📦 Deployment
+
+### Manual deployment process
+
+- Configure your [AWS CLI](https://aws.amazon.com/cli/) to point to [serverless-stg](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-authentication.html)
+
+- To manage multiple `aws cli` `profiles` install the [oh-my-zsh aws](https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/aws) `asp` plugin
+
+```sh
+# Clear your aws profile
+asp
+
+# Activate your serverless-stg aws profile
+asp <STG_PROFILE_NAME>
+```
+
+### Deploy the project
+
+```sh
+# Configure your aws profile
+asp stg
+
+# Login to aws sso
+aws sso login
+
+cd infrastructure
+cdk deploy --all
+```
+
+## Claude Desktop Configuration
+
+[Claude Desktop](https://claude.ai/download) currently doesn't yet support remote MCP clients using `SSE transport` only `stdio`, as such we will use the [mcp-remote local proxy](https://www.npmjs.com/package/mcp-remote) to connect it to the remote DDM Server.
+
+### Installing mcp-remote
+
+```bash
+npx install -g mcp-remote
+```
+
+### Claude Desktop Configuration
+
+```json
+
+{
+  "mcpServers": {
+    "data-discovery": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://ddm-sbx-alb-719760281.us-east-1.elb.amazonaws.com/mcp",
+        "--allow-http"
+      ]
+    }
+  }
+}
+
+```

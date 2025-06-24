@@ -19,6 +19,7 @@ dependencies = [
     "fastapi-mcp>=0.3.4",
     "fastapi>=0.115.13",
     "uvicorn>=0.34.3",
+    "aws-cdk-lib>=2.201.0",
 ]
 
 [tool.hatch.build.targets.wheel]
