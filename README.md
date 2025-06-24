@@ -395,8 +395,32 @@ aws sso login
 cd infrastructure
 cdk deploy --all
 ```
-### MCP Transport Limitations
-- **fastapi_mcp**: Currently supports SSE transport only
-- **Claude Desktop**: Requires stdio transport (incompatible with fastapi_mcp)
-- **Workaround**: Use standalone MCP server for Claude Desktop
-- **Future**: stdio transport support may be added to fastapi_mcp
+
+## Claude Desktop Configuration
+
+[Claude Desktop](https://claude.ai/download) currently doesn't yet support remote MCP clients using `SSE transport` only `stdio`, as such we will use the [mcp-remote local proxy](https://www.npmjs.com/package/mcp-remote) to connect it to the remote DDM Server.
+
+### Installing mcp-remote
+
+```bash
+npx install -g mcp-remote
+```
+
+### Claude Desktop Configuration
+
+```json
+
+{
+  "mcpServers": {
+    "data-discovery": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://ddm-sbx-alb-719760281.us-east-1.elb.amazonaws.com/mcp",
+        "--allow-http"
+      ]
+    }
+  }
+}
+
+```

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "data-discovery": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://ddm-sbx-alb-719760281.us-east-1.elb.amazonaws.com/mcp",
+        "--allow-http"
+      ]
+    }
+  }
+}
