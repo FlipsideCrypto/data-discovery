@@ -1,0 +1,60 @@
+name: release-stg
+run-name: release-stg
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  deploy:
+    name: Deploy
+    if: ${{ ! failure() && ! cancelled() }}
+    defaults:
+      run:
+        working-directory: infrastructure/
+        shell: bash -el {0}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      GITHUB_TOKEN: ${{ secrets.flipside_github_token }}
+    
+    environment: serverless-stg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          if_key_exists: replace
+          key: ${{ secrets.external_ci_bot_ssh_private_key }}
+          known_hosts: ${{ secrets.external_ci_bot_ssh_known_hosts }}
+
+      - name: "Configure AWS credentials"
+        uses: "aws-actions/configure-aws-credentials@v4"
+        with:
+          aws-access-key-id: "${{ secrets.external_ci_access_key }}"
+          aws-region: "${{ vars.AWS_REGION }}"
+          aws-secret-access-key: "${{ secrets.external_ci_secret_key }}"
+          mask-aws-account-id: false
+          role-duration-seconds: 3600
+          role-skip-session-tagging: true
+          role-to-assume: ${{ secrets.aws_execution_role_arn }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install CDK
+        run:  npm i -g aws-cdk
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Deploy
+        env:
+          GITHUB_TOKEN: ${{ secrets.FSC_RO_GITHUB_TOKEN }}
+        run: |
+          cdk deploy --all --require-approval never --method change-set
+
+
