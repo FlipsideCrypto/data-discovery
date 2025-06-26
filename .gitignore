@@ -64,7 +64,10 @@ CLAUDE.local.md
 .claude/context
 .claude/local
 
-# CDK
-
-infrastructure/cdk.out/
-infrastructure/cdk.context.json
+### CDK-specific ignores ###
+*.swp
+cdk.context.json
+package-lock.json
+yarn.lock
+.cdk.staging
+cdk.out

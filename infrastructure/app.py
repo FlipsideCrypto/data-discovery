@@ -16,5 +16,5 @@ env_map = {
 stage = env_map.get(current_env.account, "sbx")
 
 app = cdk.App()
-DataDiscoveryStack(app, f"ddm-{stage}-stack", stage=stage)
+DataDiscoveryStack(app, f"ddm-{stage}-stack", stage=stage, env=current_env)
 app.synth()
