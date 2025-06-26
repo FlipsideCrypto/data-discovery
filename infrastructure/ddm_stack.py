@@ -19,8 +19,6 @@ class DataDiscoveryStack(Stack):
         self.stage = kwargs.pop("stage", "sbx") 
         super().__init__(scope, id, **kwargs)
 
-        # vpc = ec2.Vpc(self, f"ddm-{self.stage}-ecs-vpc", max_azs=2, nat_gateways=1)
-
         vpc = ec2.Vpc.from_lookup(
             self,
             "ExistingVpc",
