@@ -64,7 +64,13 @@ CLAUDE.local.md
 .claude/context
 .claude/local
 
-# CDK
+### CDK-specific ignores ###
+*.swp
+cdk.context.json
+package-lock.json
+yarn.lock
+.cdk.staging
+cdk.out
 
-infrastructure/cdk.out/
-infrastructure/cdk.context.json
+# pytest
+.pytest_cache/
