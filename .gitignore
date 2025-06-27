@@ -71,3 +71,6 @@ package-lock.json
 yarn.lock
 .cdk.staging
 cdk.out
+
+# pytest
+.pytest_cache/
